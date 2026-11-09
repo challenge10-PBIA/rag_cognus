@@ -38,6 +38,19 @@ O índice é reconstruído em memória por execução; o custo da construção �
 separadamente da latência por pergunta. É um protótipo para o acervo atual, não um
 serviço de produção ou índice persistente.
 
+## Chat no navegador
+
+```bash
+python -m pip install -e '.[ui]'
+streamlit run src/rag_cognus/chat_app.py --server.address 127.0.0.1 --server.port 8501
+```
+
+Abra `http://127.0.0.1:8501`. O chat mostra resposta e evidências lado a lado,
+com filtro por nicho, escolha de busca e quantidade de trechos. Para testar só a
+recuperação, desative **Gerar resposta com Qwen**. O botão **Atualizar Gold**
+refaz o snapshot diretamente do Databricks. Cada pergunta é independente;
+o histórico visual não é usado como evidência pelo modelo.
+
 ## No Databricks
 
 Abra [01_databricks_avaliacao.ipynb](notebooks/01_databricks_avaliacao.ipynb) no Git folder.

@@ -9,7 +9,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: python -m pip install -e '.[dev]'
+      - run: python -m pip install -e '.[dev,ui]'
       - run: ruff check src tests scripts
       - run: ruff format --check src tests scripts
       - run: pytest -q

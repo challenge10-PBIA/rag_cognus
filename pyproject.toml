@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.14,<1"]
+ui = ["streamlit>=1.50,<2"]
 
 [project.scripts]
 rag-cognus = "rag_cognus.cli:main"
