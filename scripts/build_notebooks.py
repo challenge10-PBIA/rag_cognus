@@ -271,4 +271,26 @@ write(
         ("markdown", (ROOT / "docs/resultados_iniciais.md").read_text()),
     ],
 )
-print("Quatro notebooks IPYNB gerados")
+write(
+    "05_contexto_fontes_e_correlacao.ipynb",
+    [
+        ("markdown", (ROOT / "docs/contexto_metricas.md").read_text()),
+        (
+            "code",
+            """from pathlib import Path
+import json
+import pandas as pd
+root = next(p for p in [Path.cwd(), *Path.cwd().parents]
+            if (p / 'src/rag_cognus').is_dir())
+report = root / 'outputs/context_evaluation_summary.json'
+if report.exists():
+    result = json.loads(report.read_text())
+    display(pd.DataFrame([result['metrics']]))
+    display(pd.DataFrame(result['correlations']))
+    print('Run local:', result['run_id'])
+else:
+    print('Execute context-eval para gerar os resultados locais.')""",
+        ),
+    ],
+)
+print("Cinco notebooks IPYNB gerados")

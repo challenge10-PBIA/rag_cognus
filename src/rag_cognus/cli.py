@@ -33,6 +33,12 @@ def main():
     evaluate_parser.add_argument("--limit", type=int)
     judge = sub.add_parser("judge")
     judge.add_argument("results")
+    context = sub.add_parser("context-eval", help="Evaluation local de contexto e fontes")
+    context.add_argument("results")
+    context.add_argument("--answers")
+    context.add_argument("--judge", action="store_true")
+    context.add_argument("--limit", type=int, default=6)
+    context.add_argument("--k", type=int)
     args = parser.parse_args()
     if args.command == "mlflow-local":
         if not 1 <= args.port <= 65535:
@@ -56,6 +62,24 @@ def main():
         ]
         raise SystemExit(subprocess.call(command))
     settings = Settings.from_env()
+    if args.command == "context-eval":
+        from rag_cognus.context_eval import evaluate_context
+
+        print(
+            json.dumps(
+                evaluate_context(
+                    args.results,
+                    settings,
+                    limit=args.limit,
+                    use_judge=args.judge,
+                    answers_path=args.answers,
+                    requested_k=args.k,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
     if getattr(args, "backend", None):
         settings = replace(settings, backend=args.backend)
     if getattr(args, "k", None) is not None:

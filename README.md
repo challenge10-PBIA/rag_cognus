@@ -55,6 +55,30 @@ fora do Git. O arquivo `outputs/local_eval_summary.json` guarda os IDs dos runs
 locais. O chat e os comandos de avaliação usam esse servidor por padrão.
 Para retomar após reiniciar o computador, execute novamente `rag-cognus mlflow-local`.
 
+## Evaluation de contexto e fontes
+
+No MLflow local, a avaliação `local-contexto-fontes-evaluation` mostra indicadores
+por pergunta. O comando `rag-cognus context-eval` acrescenta relevância por trecho,
+precisão por posição estimada pelo juiz, suficiência, diversidade de fontes,
+redundância e uso das fontes na resposta. Precisão e recall humanos só são
+calculados com referências revisadas.
+
+```bash
+rag-cognus context-eval outputs/ID_RECUPERACAO.json \
+  --answers outputs/ID_RESPOSTAS.json --judge --limit 6 --k 5
+```
+
+A suite também pode executar essa etapa automaticamente:
+
+```bash
+python scripts/eval_local.py --context-eval --judge --context-limit 6
+```
+
+Consulte [a metodologia e interpretação](docs/contexto_metricas.md) ou o
+[relatório IPYNB](notebooks/05_contexto_fontes_e_correlacao.ipynb).
+As tabelas de fontes e correlações ficam nos artefatos locais do run. Correlações
+com poucos pares ou sem variação não recebem um número; associações não são causais.
+
 ## Chat no navegador
 
 ```bash

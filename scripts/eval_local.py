@@ -22,11 +22,13 @@ def main():
     parser.add_argument("--uri", default="http://127.0.0.1:5000")
     parser.add_argument("--generate-limit", type=int, default=2)
     parser.add_argument("--judge", action="store_true")
+    parser.add_argument("--context-eval", action="store_true")
+    parser.add_argument("--context-limit", type=int, default=6)
     parser.add_argument("--backend", choices=["bm25", "dense"], default="bm25")
     args = parser.parse_args()
     if args.generate_limit < 0:
         parser.error("--generate-limit deve ser zero ou positivo")
-    if args.judge and args.generate_limit == 0:
+    if args.judge and args.generate_limit == 0 and not args.context_eval:
         parser.error("--judge exige --generate-limit maior que zero")
     root = Path(__file__).resolve().parents[1]
     load_dotenv(root / ".env")
@@ -67,7 +69,18 @@ def main():
         )
         runs.append(generated)
     report = {"tracking_uri": args.uri, "runs": runs}
-    if args.judge:
+    if args.context_eval:
+        from rag_cognus.context_eval import evaluate_context
+
+        report["context_evaluation"] = evaluate_context(
+            output / (runs[1]["run_id"] + ".json"),
+            settings,
+            limit=args.context_limit,
+            use_judge=args.judge,
+            answers_path=output / (generated["run_id"] + ".json") if generated else None,
+            requested_k=5,
+        )
+    elif args.judge:
         if generated is None:
             parser.error("--judge exige geração; use --generate-limit maior que zero")
         report["judge_run_id"] = evaluate_groundedness(

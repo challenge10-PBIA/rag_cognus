@@ -157,6 +157,8 @@ def evaluate(
         counts = {name: len(values) for name, values in totals.items()}
         summary = {
             "run_id": run.info.run_id,
+            "top_k": settings.top_k,
+            "backend": settings.backend,
             "mode": mode,
             "cases": len(rows),
             "human_verified_cases": sum(
