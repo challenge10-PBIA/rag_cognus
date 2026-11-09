@@ -31,7 +31,7 @@ class Settings:
     backend: str = "bm25"
     top_k: int = 5
     dense_min_score: float = 0.3
-    tracking_uri: str = "sqlite:///mlflow.db"
+    tracking_uri: str = "http://127.0.0.1:5000"
     experiment: str = "rag-cognus"
 
     def __post_init__(self):

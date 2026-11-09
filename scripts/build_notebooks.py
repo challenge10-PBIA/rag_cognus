@@ -182,7 +182,8 @@ modelo; não equivale a revisão humana ou avaliação clínica. Abstenções re
 `not_scored`, não aprovação automática de groundedness.
 
 Para usar outro juiz, adapte a configuração do modelo de forma explícita.
-O MLflow local pode ser aberto com `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
+Inicie o servidor com `rag-cognus mlflow-local` e abra `http://127.0.0.1:5000`.
+Para executar a suite completa, use `python scripts/eval_local.py --judge`.
 """,
         ),
         (

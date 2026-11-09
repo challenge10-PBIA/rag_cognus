@@ -50,7 +50,7 @@ def retrieve_only(retriever, query, niche):
 
 
 def main():
-    load_dotenv(ROOT / ".env")
+    load_dotenv(ROOT / ".env", override=True)
     settings = Settings.from_env()
     snapshot = ROOT / ".cache/gold.jsonl"
     st.set_page_config(page_title="Cognus • teste seu RAG", page_icon="💬", layout="wide")
@@ -58,6 +58,8 @@ def main():
     st.caption("Converse com a base de comunicação e confira as evidências recuperadas.")
     with st.sidebar:
         st.subheader("Sua consulta")
+        if urlparse(settings.tracking_uri).scheme in {"http", "https"}:
+            st.link_button("Avaliações no MLflow", settings.tracking_uri)
         niche_label = st.selectbox("Assunto", list(NICHES))
         backend_label = st.selectbox("Busca", ["Por termos · BM25", "Por significado · embeddings"])
         k = st.slider("Quantidade de trechos", 1, 10, settings.top_k)

@@ -81,3 +81,12 @@ acurácia nem validação clínica. Não foi treinado ou ajustado nenhum modelo.
 
 A escolha de k, threshold, perguntas e critérios de aprovação é local ao projeto.
 As referências não demonstram que os parâmetros iniciais sejam ótimos para esse acervo.
+
+## Executar localmente
+
+O comando `rag-cognus mlflow-local` inicia API e interface em `127.0.0.1:5000`,
+com banco e artefatos em `.cache/mlflow`. O padrão de tracking da aplicação é
+esse endpoint HTTP. `python scripts/eval_local.py --judge` registra comparação
+k=3/k=5, respostas Qwen e os scorers de groundedness e correção condicional a
+referências humanas. Resultados, perguntas e contexto completos permanecem
+locais, fora do repositório público.

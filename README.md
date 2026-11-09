@@ -21,7 +21,13 @@ No `.env`, preencha `DATABRICKS_WAREHOUSE_ID`. Autentique por OAuth no perfil
 `projeto`, usando a CLI Databricks. Se a CLI estiver na pasta pessoal, use
 `$HOME/.local/bin/databricks`. Senhas e tokens não fazem parte do repositório.
 
-Com o Ollama ativo e os modelos `qwen3.5:9b` e `embeddinggemma:latest` instalados:
+Em um terminal, inicie o servidor local e mantenha-o aberto:
+
+```bash
+rag-cognus mlflow-local
+```
+
+Abra `http://127.0.0.1:5000`. Em outro terminal, com o Ollama ativo e os modelos `qwen3.5:9b` e `embeddinggemma:latest` instalados:
 
 ```bash
 rag-cognus sync-gold
@@ -30,13 +36,24 @@ rag-cognus evaluate --backend bm25 --k 3
 rag-cognus evaluate --backend bm25 --k 5
 rag-cognus evaluate --backend dense --k 5
 rag-cognus evaluate --generate --limit 2
-mlflow ui --backend-store-uri sqlite:///mlflow.db
+python scripts/eval_local.py --generate-limit 2 --judge
 ```
 
 `dense` usa `OllamaEmbeddings` + `InMemoryVectorStore`. `bm25` é a linha de base lexical.
 O índice é reconstruído em memória por execução; o custo da construção é registrado
 separadamente da latência por pergunta. É um protótipo para o acervo atual, não um
 serviço de produção ou índice persistente.
+
+## Suite de avaliações no MLflow local
+
+`python scripts/eval_local.py` executa recuperação k=3/k=5 e duas perguntas com
+Qwen; `--judge` adiciona o juiz exploratório. Para somente recuperação, use
+`--generate-limit 0`. Para comparar embeddings locais, use `--backend dense`.
+
+O servidor usa `127.0.0.1:5000`; banco e artefatos ficam em `.cache/mlflow/`,
+fora do Git. O arquivo `outputs/local_eval_summary.json` guarda os IDs dos runs
+locais. O chat e os comandos de avaliação usam esse servidor por padrão.
+Para retomar após reiniciar o computador, execute novamente `rag-cognus mlflow-local`.
 
 ## Chat no navegador
 
