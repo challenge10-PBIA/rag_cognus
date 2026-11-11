@@ -64,3 +64,54 @@ def test_sql_pagination(monkeypatch, documents):
     )
     actual = load_from_databricks(Settings(warehouse_id="example"))
     assert [d.id for d in actual] == ["a", "b", "c"]
+
+
+def test_token_auth_uses_host_and_ignores_profile_env(monkeypatch):
+    import os
+
+    import databricks.sdk
+
+    from rag_cognus.gold import workspace_client
+
+    calls = []
+
+    def fake_client(**kwargs):
+        calls.append((kwargs, os.environ.get("DATABRICKS_CONFIG_PROFILE")))
+        return NS()
+
+    monkeypatch.setattr(databricks.sdk, "WorkspaceClient", fake_client)
+    monkeypatch.setenv("DATABRICKS_CONFIG_PROFILE", "perfil-inexistente")
+    settings = Settings(host="adb-123.azuredatabricks.net/", token="dapi-secreto")
+    workspace_client(settings)
+    kwargs, profile_during_call = calls[0]
+    assert kwargs == {
+        "host": "https://adb-123.azuredatabricks.net",
+        "token": "dapi-secreto",
+        "auth_type": "pat",
+    }
+    assert profile_during_call is None
+    assert os.environ["DATABRICKS_CONFIG_PROFILE"] == "perfil-inexistente"
+    assert "dapi-secreto" not in repr(settings)
+
+
+def test_profile_auth_when_no_token(monkeypatch):
+    import databricks.sdk
+
+    from rag_cognus.gold import workspace_client
+
+    calls = []
+    monkeypatch.setattr(databricks.sdk, "WorkspaceClient", lambda **kw: calls.append(kw))
+    workspace_client(Settings(profile="serviceUser"))
+    assert calls == [{"profile": "serviceUser"}]
+
+
+def test_host_without_token_is_rejected():
+    with pytest.raises(ValueError, match="juntos"):
+        load_from_databricks(Settings(host="https://x", warehouse_id="w"))
+
+
+def test_settings_read_token_from_env(monkeypatch):
+    monkeypatch.setenv("DATABRICKS_HOST", "https://x.cloud.databricks.com")
+    monkeypatch.setenv("DATABRICKS_TOKEN", "dapi-1")
+    settings = Settings.from_env()
+    assert settings.databricks_auth == "token" and settings.token == "dapi-1"

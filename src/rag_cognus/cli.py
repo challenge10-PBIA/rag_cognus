@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import subprocess
 import sys
 from dataclasses import replace
@@ -12,39 +13,45 @@ from dotenv import load_dotenv
 from rag_cognus.config import Settings
 
 
+def port_in_use(port: int) -> bool:
+    with socket.socket() as s:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
 def main():
     load_dotenv()
-    parser = argparse.ArgumentParser(description="Cognus: Gold → LangChain/Ollama → MLflow")
+    parser = argparse.ArgumentParser(description="Cognus: Gold → LangChain/Ollama → MLflow local")
     parser.add_argument("--snapshot", default=".cache/gold.jsonl")
     sub = parser.add_subparsers(dest="command", required=True)
-    server = sub.add_parser("mlflow-local", help="Abrir servidor e interface MLflow locais")
-    server.add_argument("--port", type=int, default=5000)
+    server = sub.add_parser("mlflow-local", help="Abrir o MLflow open source local")
+    server.add_argument("--port", type=int, default=5001)
     server.add_argument("--data-dir", default=".cache/mlflow")
     sub.add_parser("sync-gold", help="Ler a Gold com OAuth e SQL Warehouse")
     ask = sub.add_parser("ask")
     ask.add_argument("query")
     ask.add_argument("--niche")
     ask.add_argument("--backend", choices=["bm25", "dense"], default=None)
-    evaluate_parser = sub.add_parser("evaluate")
-    evaluate_parser.add_argument("--dataset", default="data/evaluation/questions.jsonl")
-    evaluate_parser.add_argument("--backend", choices=["bm25", "dense"], default=None)
-    evaluate_parser.add_argument("--k", type=int, default=None)
-    evaluate_parser.add_argument("--generate", action="store_true")
-    evaluate_parser.add_argument("--limit", type=int)
-    judge = sub.add_parser("judge")
-    judge.add_argument("results")
-    context = sub.add_parser("context-eval", help="Evaluation local de contexto e fontes")
-    context.add_argument("results")
-    context.add_argument("--answers")
-    context.add_argument("--judge", action="store_true")
-    context.add_argument("--limit", type=int, default=6)
-    context.add_argument("--k", type=int)
+    ask.add_argument("--judge", action="store_true", help="Mostrar as notas do juiz")
+    ev = sub.add_parser("evaluate", help="Avaliar e registrar no MLflow local")
+    ev.add_argument("--dataset", default="data/evaluation/questions.jsonl")
+    ev.add_argument("--backend", choices=["bm25", "dense"], default=None)
+    ev.add_argument("--k", type=int, default=None)
+    ev.add_argument("--generate", action="store_true", help="Gerar respostas com o Qwen")
+    ev.add_argument("--judge", action="store_true", help="Notas de qualidade (requer --generate)")
+    ev.add_argument("--limit", type=int)
     args = parser.parse_args()
+
     if args.command == "mlflow-local":
         if not 1 <= args.port <= 65535:
             parser.error("Porta inválida")
+        if port_in_use(args.port):
+            parser.error(
+                f"A porta {args.port} já está em uso (no macOS a 5000 é do AirPlay). "
+                "Use --port com outra porta e ajuste MLFLOW_TRACKING_URI."
+            )
         folder = Path(args.data_dir).resolve()
         folder.mkdir(parents=True, exist_ok=True)
+        print(f"MLflow open source em http://127.0.0.1:{args.port}")
         command = [
             sys.executable,
             "-m",
@@ -61,25 +68,8 @@ def main():
             str(folder / "artifacts"),
         ]
         raise SystemExit(subprocess.call(command))
-    settings = Settings.from_env()
-    if args.command == "context-eval":
-        from rag_cognus.context_eval import evaluate_context
 
-        print(
-            json.dumps(
-                evaluate_context(
-                    args.results,
-                    settings,
-                    limit=args.limit,
-                    use_judge=args.judge,
-                    answers_path=args.answers,
-                    requested_k=args.k,
-                ),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        return
+    settings = Settings.from_env()
     if getattr(args, "backend", None):
         settings = replace(settings, backend=args.backend)
     if getattr(args, "k", None) is not None:
@@ -90,42 +80,42 @@ def main():
         docs = load_from_databricks(settings)
         print(json.dumps(save_snapshot(docs, args.snapshot, settings.gold_view), indent=2))
         return
-    from rag_cognus.evaluation import (
-        configure_tracking,
-        evaluate,
-        evaluate_groundedness,
-        load_cases,
-    )
 
-    if args.command == "judge":
-        print(evaluate_groundedness(args.results, settings))
-        return
-    configure_tracking(settings)
+    from rag_cognus.evaluation import configure_tracking, evaluate, load_cases
+    from rag_cognus.judges import make_judge
     from rag_cognus.retrieval import GoldRetriever
 
-    docs = load_snapshot(args.snapshot)
-    retriever = GoldRetriever(docs, settings)
+    configure_tracking(settings)
+    retriever = GoldRetriever(load_snapshot(args.snapshot), settings)
     if args.command == "ask":
         from rag_cognus.chain import RagPipeline
+        from rag_cognus.judges import as_dict, judge_response
 
         result = RagPipeline(retriever, settings).predict(args.query, args.niche)
+        if args.judge:
+            result["scores"] = as_dict(judge_response(make_judge(settings), args.query, result))
         result.pop("retrieved_context", None)
         print(json.dumps(result, ensure_ascii=False, indent=2))
-    else:
-        cases = load_cases(args.dataset)
-        if args.limit is not None:
-            if args.limit < 1:
-                parser.error("--limit deve ser positivo")
-            cases = cases[: args.limit]
-        pipeline = None
-        if args.generate:
-            from rag_cognus.chain import RagPipeline
+        return
 
-            pipeline = RagPipeline(retriever, settings)
-        result = evaluate(cases, retriever, settings, pipeline)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        if result["metrics"]["error_rate"]:
-            raise SystemExit(1)
+    if args.judge and not args.generate:
+        parser.error("--judge avalia respostas; use junto com --generate")
+    cases = load_cases(args.dataset)
+    if args.limit is not None:
+        if args.limit < 1:
+            parser.error("--limit deve ser positivo")
+        cases = cases[: args.limit]
+    pipeline = None
+    if args.generate:
+        from rag_cognus.chain import RagPipeline
+
+        pipeline = RagPipeline(retriever, settings)
+    judge = make_judge(settings) if args.judge else None
+    summary = evaluate(cases, retriever, settings, pipeline, judge)
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    print(f"\nVeja no MLflow: {settings.tracking_uri}")
+    if summary["metrics"].get("error/mean"):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

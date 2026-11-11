@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from collections.abc import Iterable
+from contextlib import contextmanager
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -33,13 +35,38 @@ def load_from_spark(spark, view: str = Settings.gold_view) -> list[Document]:
     return _documents(r.asDict() for r in rows.toLocalIterator())
 
 
-def load_from_databricks(settings: Settings, timeout: int = 300) -> list[Document]:
-    """OAuth pelo perfil; lê todas as páginas da Statement Execution API."""
+DATABRICKS_ENV = ("DATABRICKS_CONFIG_PROFILE", "DATABRICKS_HOST", "DATABRICKS_TOKEN")
+
+
+@contextmanager
+def _without_env(names):
+    # O SDK também lê essas variáveis sozinho e misturaria perfil com token.
+    saved = {n: os.environ.pop(n) for n in names if n in os.environ}
+    try:
+        yield
+    finally:
+        os.environ.update(saved)
+
+
+def workspace_client(settings: Settings):
+    """Token (DATABRICKS_HOST + DATABRICKS_TOKEN) ou, na falta deles, perfil OAuth."""
     from databricks.sdk import WorkspaceClient
 
+    mode = settings.databricks_auth
+    with _without_env(DATABRICKS_ENV):
+        if mode == "token":
+            host = settings.host.strip().rstrip("/")
+            if not host.startswith("https://"):
+                host = "https://" + host.removeprefix("http://")
+            return WorkspaceClient(host=host, token=settings.token, auth_type="pat")
+        return WorkspaceClient(profile=settings.profile)
+
+
+def load_from_databricks(settings: Settings, timeout: int = 300) -> list[Document]:
+    """Lê todas as páginas da Statement Execution API em um SQL Warehouse."""
     if not settings.warehouse_id:
-        raise ValueError("Configure DATABRICKS_WAREHOUSE_ID para leitura fora do notebook.")
-    client = WorkspaceClient(profile=settings.profile)
+        raise ValueError("Configure DATABRICKS_WAREHOUSE_ID para ler a Gold.")
+    client = workspace_client(settings)
     query = (
         f"SELECT chunk_id, page_content, metadata_json FROM "
         f"{qualified_name(settings.gold_view)} ORDER BY chunk_id"

@@ -1,151 +1,94 @@
 # Cognus — RAG e avaliações
 
 Projeto pequeno para consumir **`cognus.gold.vw_rag_conhecimento`**, recuperar evidências
-com LangChain e gerar respostas pelo **Qwen3.5 9B no Ollama**. O MLflow registra
-perguntas, trechos recuperados, citações, respostas, latência e configuração.
+com LangChain e gerar respostas pelo **Qwen3.5 9B no Ollama**. Os resultados ficam no
+**MLflow open source local**: traces, notas por pergunta e médias por avaliação.
 
-A Gold já contém os trechos: o projeto não reingere documentos nem os divide novamente.
+O Databricks é usado só para ler a Gold (`sync-gold`). O tracking nunca vai para o
+MLflow do Databricks: URIs `databricks://` são recusadas.
 
 ## Começar localmente
 
 ```bash
-git clone https://github.com/challenge10-PBIA/rag_cognus.git
-cd rag_cognus
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install -e '.[dev,ui]'
 cp .env.example .env
 ```
 
-No `.env`, preencha `DATABRICKS_WAREHOUSE_ID`. Autentique por OAuth no perfil
-`projeto`, usando a CLI Databricks. Se a CLI estiver na pasta pessoal, use
-`$HOME/.local/bin/databricks`. Senhas e tokens não fazem parte do repositório.
+No `.env`, preencha `DATABRICKS_WAREHOUSE_ID` e escolha como conectar ao Databricks:
 
-Em um terminal, inicie o servidor local e mantenha-o aberto:
+- **Token:** `DATABRICKS_HOST` + `DATABRICKS_TOKEN`. Se os dois estiverem preenchidos,
+  o perfil é ignorado.
+- **Perfil OAuth:** deixe host/token vazios, defina `DATABRICKS_CONFIG_PROFILE` e rode
+  `databricks auth login --profile <nome>`.
+
+O `.env` está no `.gitignore`; nunca coloque o token no `.env.example`.
+
+**1. MLflow local** (deixe aberto em um terminal):
 
 ```bash
-rag-cognus mlflow-local
+rag-cognus mlflow-local          # http://127.0.0.1:5001
 ```
 
-Abra `http://127.0.0.1:5000`. Em outro terminal, com o Ollama ativo e os modelos `qwen3.5:9b` e `embeddinggemma:latest` instalados:
+> No macOS a porta 5000 é ocupada pelo AirPlay Receiver, por isso usamos a 5001.
+> Se o seu `.env` antigo tiver `MLFLOW_TRACKING_URI=http://127.0.0.1:5000` ou
+> `databricks://...`, troque para `http://127.0.0.1:5001`.
+
+**2. Base e perguntas** (com o Ollama ativo e `qwen3.5:9b` / `embeddinggemma:latest`):
 
 ```bash
 rag-cognus sync-gold
-rag-cognus ask "Como organizar uma apresentação clara para meu público?"
-rag-cognus evaluate --backend bm25 --k 3
-rag-cognus evaluate --backend bm25 --k 5
-rag-cognus evaluate --backend dense --k 5
-rag-cognus evaluate --generate --limit 2
-python scripts/eval_local.py --generate-limit 2 --judge
+rag-cognus ask "Como organizar uma apresentação clara?" --judge
+rag-cognus evaluate --generate --judge --limit 5
 ```
 
-`dense` usa `OllamaEmbeddings` + `InMemoryVectorStore`. `bm25` é a linha de base lexical.
-O índice é reconstruído em memória por execução; o custo da construção é registrado
-separadamente da latência por pergunta. É um protótipo para o acervo atual, não um
-serviço de produção ou índice persistente.
-
-## Suite de avaliações no MLflow local
-
-`python scripts/eval_local.py` executa recuperação k=3/k=5 e duas perguntas com
-Qwen; `--judge` adiciona o juiz exploratório. Para somente recuperação, use
-`--generate-limit 0`. Para comparar embeddings locais, use `--backend dense`.
-
-O servidor usa `127.0.0.1:5000`; banco e artefatos ficam em `.cache/mlflow/`,
-fora do Git. O arquivo `outputs/local_eval_summary.json` guarda os IDs dos runs
-locais. O chat e os comandos de avaliação usam esse servidor por padrão.
-Para retomar após reiniciar o computador, execute novamente `rag-cognus mlflow-local`.
-
-## Evaluation de contexto e fontes
-
-No MLflow local, a avaliação `local-contexto-fontes-evaluation` mostra indicadores
-por pergunta. O comando `rag-cognus context-eval` acrescenta relevância por trecho,
-precisão por posição estimada pelo juiz, suficiência, diversidade de fontes,
-redundância e uso das fontes na resposta. Precisão e recall humanos só são
-calculados com referências revisadas.
+**3. Chat com métricas:**
 
 ```bash
-rag-cognus context-eval outputs/ID_RECUPERACAO.json \
-  --answers outputs/ID_RESPOSTAS.json --judge --limit 6 --k 5
-```
-
-A suite também pode executar essa etapa automaticamente:
-
-```bash
-python scripts/eval_local.py --context-eval --judge --context-limit 6
-```
-
-Consulte [a metodologia e interpretação](docs/contexto_metricas.md) ou o
-[relatório IPYNB](notebooks/05_contexto_fontes_e_correlacao.ipynb).
-As tabelas de fontes e correlações ficam nos artefatos locais do run. Correlações
-com poucos pares ou sem variação não recebem um número; associações não são causais.
-
-## Chat no navegador
-
-```bash
-python -m pip install -e '.[ui]'
 streamlit run src/rag_cognus/chat_app.py --server.address 127.0.0.1 --server.port 8501
 ```
 
-Abra `http://127.0.0.1:8501`. O chat mostra resposta e evidências lado a lado,
-com filtro por nicho, escolha de busca e quantidade de trechos. Para testar só a
-recuperação, desative **Gerar resposta com Qwen**. O botão **Atualizar Gold**
-refaz o snapshot diretamente do Databricks. Cada pergunta é independente;
-o histórico visual não é usado como evidência pelo modelo.
+## Métricas
 
-## No Databricks
+| Tipo | Métricas | Quando |
+|---|---|---|
+| Qualidade da resposta (juiz, 1–5) | `context_relevance`, `groundedness`, `answer_relevance`, `accuracy`, `professionalism`, `quality_score` | `--generate --judge` ou **Avaliar respostas** no chat |
+| Recuperação | `precision_at_k`, `recall_at_k`, `hit_at_k`, `mrr_at_k` | Só com referências `human_verified` |
+| Citações | `citation_integrity`, `abstention_agreement`, `niche_metadata_precision_proxy` | Sempre que aplicável |
+| Operação | `latency_seconds`, `error`, `index_build_seconds` | Sempre |
 
-Abra [01_databricks_avaliacao.ipynb](notebooks/01_databricks_avaliacao.ipynb) no Git folder.
-Ele lê a Gold com Spark e registra a comparação BM25 k=3/k=5 no MLflow do Workspace.
-O notebook [02_local_qwen.ipynb](notebooks/02_local_qwen.ipynb) executa a geração local.
+No MLflow, abra o experimento `rag-cognus`: cada run mostra as médias (`accuracy/mean`…)
+e, na aba de traces/avaliações, cada pergunta com a nota e o motivo dado pelo juiz.
+Use **Chart view** para comparar runs. Detalhes em [docs/avaliacao.md](docs/avaliacao.md).
 
-**O `localhost` do Databricks não aponta para o seu Mac.** Para gerar no cluster,
-seria necessário um endpoint do modelo acessível ao cluster. Esta versão mantém
-o Qwen no Mac e permite registrar seus resultados no mesmo MLflow do Databricks:
+O juiz padrão é o próprio Qwen (viés de autoavaliação). Para um juiz independente,
+defina `OLLAMA_JUDGE_MODEL` no `.env`.
 
-```bash
-export MLFLOW_TRACKING_URI=databricks://projeto
-export MLFLOW_EXPERIMENT_NAME=/Users/SEU_USUARIO/rag_cognus_avaliacoes
-rag-cognus evaluate --generate --limit 2
-```
+## Chat no navegador
 
-A cópia de demonstração instalada no Workspace e o clone Git são independentes.
-Para acompanhar alterações do GitHub, use o Git folder do repositório.
+- **Conversa:** chat em largura total, com filtro por nicho, BM25 ou embeddings e
+  quantidade de trechos. Com **Avaliar respostas**, cada resposta mostra as cinco notas
+  e os motivos; as notas também vão para o trace no MLflow.
+- **Evidências:** escolha uma pergunta da conversa (a mais recente aparece primeiro) e veja
+  a resposta, os trechos recuperados (citados marcados), público, nichos e link da fonte.
+  **Só os citados** filtra os trechos usados na resposta.
+- **Métricas:** médias e gráfico das respostas da conversa atual; para avaliações
+  registradas no MLflow, médias com variação em relação à anterior, evolução entre
+  avaliações e mapa de calor das notas por pergunta.
+- A barra lateral mostra se Ollama e MLflow estão no ar.
 
-## Como saber se está acertando?
-
-Não há um percentual único de “assertividade”. Avaliamos separadamente:
-
-- **Recuperação:** Precision@k, Recall@k, Hit@k e MRR@k, apenas com referências revisadas.
-- **Resposta:** integridade das citações, abstenção esperada e revisão do apoio nas fontes.
-- **Operação:** erros, latência por pergunta e tempo para construir o índice.
-
-As 14 perguntas iniciais são rascunhos. O notebook
-[03_revisar_referencias.ipynb](notebooks/03_revisar_referencias.ipynb) ajuda a anotar
-`relevant_chunk_ids`, fatos esperados e abstenções. Só depois marque
-`label_status=human_verified`. Referências de outro snapshot são rejeitadas.
-
-`niche_metadata_precision_proxy` verifica os rótulos da própria Gold: **não é acurácia**.
-`citation_integrity` confirma que IDs citados foram recuperados: **não prova apoio factual**.
-Consulte [o método de avaliação](docs/avaliacao.md) antes de interpretar os resultados.
-
-Opcionalmente, `rag-cognus judge outputs/ID_DO_RUN.json` executa uma avaliação
-exploratória de groundedness com `mlflow.genai.evaluate` e o Qwen como juiz.
-O mesmo modelo gerando e julgando tem viés; não substitui avaliação independente.
-A correção contra fatos esperados só é julgada quando as referências estão revisadas.
-
-O método e os resultados iniciais também estão em
-[04_metodologia_avaliacao.ipynb](notebooks/04_metodologia_avaliacao.ipynb).
+Cada pergunta é independente; o histórico da tela não é usado como evidência.
+Para revisar referências humanas use [03_revisar_referencias.ipynb](notebooks/03_revisar_referencias.ipynb).
 
 ## Testes e dados
 
 ```bash
 pytest -q
-ruff check src tests scripts
-ruff format --check src tests scripts
+ruff check src tests
+ruff format --check src tests
 ```
 
-Os testes usam textos sintéticos e não exigem Databricks ou Ollama. O GitHub Actions
+Os testes usam textos sintéticos e não exigem Databricks, Ollama ou servidor MLflow. O GitHub Actions
 executa os mesmos checks. O snapshot da Gold, embeddings, credenciais, banco local
 MLflow e respostas ficam fora do Git. `requirements-tested.txt` registra as versões
-do ambiente local testado (Python 3.14); o `pyproject.toml` permite resolução no runtime
-Databricks/Python 3.12. Essa instalação remota é verificada no notebook.
+do ambiente local testado (Python 3.14).

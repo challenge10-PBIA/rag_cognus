@@ -31,10 +31,9 @@ def test_mlflow_run_with_real_reference_contract(documents, isolated_tracking, t
         }
     ]
     summary = evaluate(cases, GoldRetriever(documents, settings), settings, output_dir=tmp_path)
-    assert summary["human_verified_cases"] == 1
-    assert summary["metrics"]["recall_at_k"] == 1
-    assert summary["metrics"]["precision_at_k"] == 0.5
-    assert summary["metrics"]["error_rate"] == 0
+    assert summary["metrics"]["recall_at_k/mean"] == 1
+    assert summary["metrics"]["precision_at_k/mean"] == 0.5
+    assert summary["metrics"]["error/mean"] == 0
     assert (tmp_path / (summary["run_id"] + ".json")).exists()
 
 
@@ -49,30 +48,3 @@ def test_rejects_labels_from_different_gold(documents, isolated_tracking):
     ]
     with pytest.raises(ValueError, match="outro snapshot|ausentes"):
         evaluate(cases, GoldRetriever(documents, settings), settings)
-
-
-def test_mlflow_genai_accepts_draft_optional_labels(isolated_tracking):
-    import mlflow
-    from mlflow.genai.scorers import scorer
-
-    from rag_cognus.evaluation import to_genai_data
-
-    @scorer
-    def nonempty_response(outputs):
-        return bool(outputs["response"])
-
-    rows = [
-        {
-            "inputs": {"query": "teste"},
-            "outputs": {"response": "teste"},
-            "expectations": {
-                "label_status": "draft",
-                "should_abstain": None,
-                "expected_niche": None,
-                "expected_facts": [],
-            },
-        }
-    ]
-    with mlflow.start_run():
-        result = mlflow.genai.evaluate(data=to_genai_data(rows), scorers=[nonempty_response])
-    assert len(result.result_df) == 1

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rag-cognus"
 version = "0.1.0"
-description = "RAG LangChain com Qwen/Ollama, Gold Databricks e avaliações MLflow"
+description = "RAG LangChain com Qwen/Ollama, Gold Databricks e avaliações no MLflow open source"
 requires-python = ">=3.11"
 dependencies = [
   "langchain-core>=1.0,<2",
@@ -16,7 +16,6 @@ dependencies = [
   "pydantic>=2.10,<3",
   "python-dotenv>=1,<2",
   "pandas>=2,<4",
-  "matplotlib>=3.8,<4",
 ]
 
 [project.optional-dependencies]

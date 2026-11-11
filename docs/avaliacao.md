@@ -10,7 +10,6 @@ Cada run registra backend, k, modelo, threshold denso, versão da Gold, fingerpr
 do conteúdo, dataset usado, versões dos pacotes, tempo de construção do índice,
 resultados por pergunta e traces com spans `RETRIEVER` e de geração. A leitura local
 usa a Statement Execution API com paginação e um snapshot cujo hash é verificado.
-A leitura no Databricks usa Spark sobre a mesma visão.
 
 A versão Silver registrada na Gold identifica sua origem; o fingerprint registra
 os trechos exatos desta execução. Compare runs que usam o mesmo snapshot e casos.
@@ -50,19 +49,29 @@ resposta, indicação de apoio e IDs citados. Citações inventadas ou resposta 
 sem fontes causam erro explícito. Sem contexto, o pipeline se abstém sem chamar o modelo.
 Isso reduz alguns erros de estrutura; não garante que cada afirmação esteja apoiada.
 
-## Juiz opcional e avaliação humana
+## Métricas de qualidade da resposta (juiz local)
 
-O juiz local usa um scorer customizado de `mlflow.genai.evaluate`, com contexto e
-resposta reais. O escore `local_groundedness` é autoavaliação do Qwen e não uma nota
-humana. `local_correctness` compara a resposta com `expected_facts` somente quando
-os fatos estiverem presentes e o caso tiver `label_status=human_verified`; nos
-rascunhos retorna `not_scored`, sem chamar o modelo para essa comparação. Abstenções ficam como `not_scored`. A configuração identifica o mesmo modelo
-como gerador e juiz, permitindo substituir esse juiz em comparações posteriores.
+`rag-cognus evaluate --generate --judge` e o botão **Avaliar respostas** do chat usam
+um juiz local (Ollama) que, em uma única chamada, dá notas inteiras de 1 a 5:
 
-A revisão humana deve observar: apoio factual por afirmação, pertinência à pergunta,
-adequação ao público da fonte, fidelidade das citações, suficiência do contexto e
-abstenção quando a base não sustenta a resposta. Um piloto sem rótulos não estabelece
-acurácia nem validação clínica. Não foi treinado ou ajustado nenhum modelo.
+| Métrica | Pergunta que responde |
+|---|---|
+| `context_relevance` | Os trechos recuperados são pertinentes à pergunta? (qualidade da busca) |
+| `groundedness` | Cada afirmação da resposta tem apoio nos trechos? |
+| `answer_relevance` | A resposta atende diretamente ao que foi perguntado? |
+| `accuracy` | A informação está correta e completa? Usa `expected_facts` quando existem; senão, os trechos. |
+| `professionalism` | Tom, clareza, português correto, organização, sem diagnóstico ou prescrição. |
+| `quality_score` | Média simples das cinco notas. |
+
+No MLflow, cada pergunta vira um trace com as notas e o motivo de cada uma
+(aba **Traces/Evaluations** do run); as médias aparecem como `accuracy/mean`,
+`professionalism/mean` etc., comparáveis entre runs no gráfico do experimento.
+
+Por padrão o juiz é o mesmo modelo que gera as respostas, o que traz viés de
+autoavaliação. Configure `OLLAMA_JUDGE_MODEL` com outro modelo para comparar.
+As notas são exploratórias e não substituem revisão humana: observe apoio factual
+por afirmação, adequação ao público da fonte e abstenção quando a base não sustenta
+a resposta. Um piloto sem rótulos não estabelece acurácia nem validação clínica.
 
 ## Próximos testes
 
@@ -84,9 +93,6 @@ As referências não demonstram que os parâmetros iniciais sejam ótimos para e
 
 ## Executar localmente
 
-O comando `rag-cognus mlflow-local` inicia API e interface em `127.0.0.1:5000`,
-com banco e artefatos em `.cache/mlflow`. O padrão de tracking da aplicação é
-esse endpoint HTTP. `python scripts/eval_local.py --judge` registra comparação
-k=3/k=5, respostas Qwen e os scorers de groundedness e correção condicional a
-referências humanas. Resultados, perguntas e contexto completos permanecem
-locais, fora do repositório público.
+`rag-cognus mlflow-local` inicia o MLflow open source em `127.0.0.1:5001`, com banco
+e artefatos em `.cache/mlflow`. URIs `databricks://` são recusadas de propósito.
+Resultados, perguntas e contexto completos permanecem locais, fora do repositório.
