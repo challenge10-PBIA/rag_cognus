@@ -35,6 +35,7 @@ class Settings:
     top_k: int = 5
     dense_min_score: float = 0.3
     judge_model: str = ""
+    whisper_model: str = "small"
     # Porta 5001: no macOS a 5000 é ocupada pelo AirPlay Receiver.
     tracking_uri: str = "http://127.0.0.1:5001"
     experiment: str = "rag-cognus"
@@ -71,6 +72,7 @@ class Settings:
             top_k=int(os.getenv("RAG_TOP_K", cls.top_k)),
             dense_min_score=float(os.getenv("RAG_DENSE_MIN_SCORE", cls.dense_min_score)),
             judge_model=os.getenv("OLLAMA_JUDGE_MODEL", ""),
+            whisper_model=os.getenv("WHISPER_MODEL") or cls.whisper_model,
             tracking_uri=os.getenv("MLFLOW_TRACKING_URI") or cls.tracking_uri,
             experiment=os.getenv("MLFLOW_EXPERIMENT_NAME", cls.experiment),
         )

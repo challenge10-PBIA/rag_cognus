@@ -11,7 +11,7 @@ MLflow do Databricks: URIs `databricks://` são recusadas.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-python -m pip install -e '.[dev,ui]'
+python -m pip install -e '.[dev,ui,audio]'
 cp .env.example .env
 ```
 
@@ -76,6 +76,11 @@ defina `OLLAMA_JUDGE_MODEL` no `.env`.
   registradas no MLflow, médias com variação em relação à anterior, evolução entre
   avaliações e mapa de calor das notas por pergunta.
 - A barra lateral mostra se Ollama e MLflow estão no ar.
+
+**Pergunta por voz:** na aba Conversa, grave a pergunta pelo microfone do navegador.
+O áudio é transcrito localmente pelo Whisper (`faster-whisper`, modelo em `WHISPER_MODEL`)
+e segue o mesmo caminho da pergunta digitada; no MLflow o trace recebe `input_mode=voice`.
+Nada de áudio sai da máquina. Sem o extra `audio` instalado, o app funciona só com texto.
 
 Cada pergunta é independente; o histórico da tela não é usado como evidência.
 Para revisar referências humanas use [03_revisar_referencias.ipynb](notebooks/03_revisar_referencias.ipynb).

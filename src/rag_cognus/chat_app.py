@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import replace
@@ -15,6 +16,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+from rag_cognus import speech
 from rag_cognus.chain import RagPipeline
 from rag_cognus.config import Settings
 from rag_cognus.evaluation import EVAL_TAG, configure_tracking
@@ -58,6 +60,11 @@ def prepare(snapshot: str, fingerprint: str, settings: Settings):
 @st.cache_resource(show_spinner=False)
 def judge_for(settings: Settings):
     return make_judge(settings)
+
+
+@st.cache_resource(show_spinner="Carregando o Whisper local (1ª vez baixa o modelo)…")
+def transcriber_for(model_name: str):
+    return speech.load_transcriber(replace(Settings(), whisper_model=model_name))
 
 
 def reachable(url: str) -> bool:
@@ -386,27 +393,6 @@ def render_metrics(settings: Settings, mlflow_ok: bool):
         f"{settings.tracking_uri}/#/experiments/{run['experiment_id']}/runs/{run['run_id']}",
     )
 
-def audio_input(label, sample_rate=16000, disabled=False):
-    """Recebe áudio do microfone e retorna bytes WAV."""
-    import sounddevice as sd
-    import numpy as np
-    import streamlit as st
-    from scipy.io.wavfile import write
-
-    if disabled:
-        st.audio(b"", format="audio/wav")
-        return None
-
-    duration = st.number_input("Duração (s)", min_value=1, max_value=30, value=5, step=1)
-    record_button = st.button("Gravar áudio", key="record_audio")
-    if record_button:
-        with st.spinner("Gravando…"):
-            recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
-            sd.wait()
-            wav_bytes = write_wav_bytes(recording, sample_rate)
-            st.audio(wav_bytes, format="audio/wav")
-            return wav_bytes
-    return None
 
 def main():
     load_dotenv(ROOT / ".env", override=True)
@@ -491,18 +477,40 @@ def main():
     with chat_tab:
         chat_col = st.container()
         query = st.chat_input("Pergunte sobre comunicação, apresentações ou voz…", max_chars=3000)
-        audio_bytes = audio_input("ou grave sua pergunta", disabled=bool(query))
+        via = "text"
+        if speech.available():
+            recording = st.audio_input("Ou grave sua pergunta", key="voice")
+            if recording is not None and not query:
+                audio = recording.getvalue()
+                digest = hashlib.sha256(audio).hexdigest()
+                # st.audio_input mantém o áudio entre reruns: só transcreve gravação nova.
+                if st.session_state.get("last_audio") != digest:
+                    st.session_state["last_audio"] = digest
+                    try:
+                        with st.spinner("Transcrevendo sua pergunta…"):
+                            query = speech.transcribe(
+                                transcriber_for(settings.whisper_model), audio
+                            )
+                        via = "voice"
+                    except Exception as exc:
+                        st.warning(f"Não consegui transcrever o áudio: {exc}")
+        else:
+            st.caption("🎙️ " + speech.INSTALL_HINT)
         if query:
-            st.session_state.messages.append({"role": "user", "content": query})
+            st.session_state.messages.append(
+                {"role": "user", "content": ("🎙️ " if via == "voice" else "") + query}
+            )
             message = {
                 "role": "assistant",
                 "query": query,
                 "mode": backend_label,
                 "niche": niche_label,
+                "via": via,
             }
             try:
                 with chat_col, st.spinner("Consultando a Gold e preparando a resposta…"):
                     start = time.perf_counter()
+                    trace_id = None
                     if generate:
                         result = RagPipeline(retriever, config).predict(query, NICHES[niche_label])
                         trace_id = mlflow.get_last_active_trace_id() if mlflow_ok else None
@@ -513,6 +521,12 @@ def main():
                         result=result,
                         elapsed=time.perf_counter() - start,
                     )
+                    if trace_id:
+                        try:
+                            mlflow.flush_trace_async_logging()
+                            mlflow.MlflowClient().set_trace_tag(trace_id, "input_mode", via)
+                        except Exception:
+                            pass  # a tag é informativa; não deve derrubar a resposta
                     if generate and score:
                         judgment = judge_response(judge_for(settings), query, result)
                         message["scores"] = as_dict(judgment)
