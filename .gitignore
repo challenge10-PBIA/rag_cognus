@@ -17,3 +17,7 @@ outputs/
 *.egg-info/
 build/
 dist/
+
+# Hermes Agent (eventos locais do painel e overrides pessoais)
+.hermes-runs/
+AGENTS.override.md

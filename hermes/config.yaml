@@ -1,0 +1,124 @@
+# Perfil Hermes "ragdev" para o rag_cognus — Qwen3.5 9B local no Ollama.
+# Instalado por hermes/install.sh em ~/.hermes/profiles/ragdev/config.yaml
+# (__REPO__ é trocado pelo caminho absoluto do repositório).
+# Referência completa: cli-config.yaml.example do hermes-agent.
+
+model:
+  default: "qwen3.5:9b"
+  provider: "custom"                 # Ollama via endpoint OpenAI-compatível
+  base_url: "http://127.0.0.1:11434/v1"
+  # Janela de contexto. 32K cabe numa GPU de 8–12 GB com o 9B; com 16 GB+ use 65536.
+  # O num_ctx é enviado em toda requisição (o padrão do Ollama seria 2048).
+  context_length: 32768
+  ollama_num_ctx: 32768
+
+agent:
+  max_turns: 120
+  reasoning_effort: "medium"
+  # Equivalente ao "verifique antes de terminar" do Claude Code.
+  verify_on_stop: true
+  max_verify_nudges: 3
+  coding_instructions:
+    - "Siga AGENTS.md: spec em specs/ → teste vermelho → implementação → harness."
+    - "Leia o arquivo antes de editar; prefira patch pequeno a reescrever o arquivo."
+    - "Verificação = `python hermes/harness/check.py` (ou `--changed`). Sem HARNESS OK não está pronto."
+    - "Tarefas com 2+ módulos: carregue a skill rag-orchestrator e delegue com delegate_task."
+    - "Respostas finais curtas: o que mudou, arquivos, saída do harness."
+  # Para enxugar o prompt do 9B, desligue toolsets que não usa (veja nomes em `ragdev tools`):
+  # disabled_toolsets: [browser, image_gen]
+
+# Modelo pequeno entra em loop com facilidade: corta cedo.
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: true
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 4
+    same_tool_failure: 6
+    idempotent_no_progress: 4
+
+compression:
+  enabled: true
+  threshold: 0.60
+  target_ratio: 0.25
+  protect_last_n: 12
+  protect_first_n: 3
+
+file_read_max_chars: 40000
+tool_output:
+  max_bytes: 20000
+  max_lines: 400
+  max_line_length: 400
+
+terminal:
+  backend: local
+  timeout: 300
+
+# ── Multiagentes (delegate_task) ─────────────────────────────────────────────
+delegation:
+  # Subagentes usam o mesmo Qwen local (herdam model/provider).
+  max_iterations: 60
+  # Cada filho paralelo ocupa um slot do Ollama. Combine com OLLAMA_NUM_PARALLEL=3
+  # (pai + 2 filhos). Com pouca VRAM, use 1.
+  max_concurrent_children: 2
+  # 2 = o líder pode criar um sub-orquestrador (role="orchestrator") que cria folhas.
+  max_spawn_depth: 2
+  orchestrator_enabled: true
+  # Cada filho trabalha num git worktree próprio: paralelos não colidem no mesmo arquivo.
+  worktree_isolation: true
+  # O TUI do pai é dono do stdin; aprovação perigosa em subagente é negada (seguro).
+  subagent_auto_approve: false
+  child_timeout_seconds: 1200
+
+skills:
+  creation_nudge_interval: 0         # evita que o 9B pare para criar skills no meio da tarefa
+  external_dirs:
+    - "__REPO__/hermes/skills"
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+
+display:
+  tool_progress: all                 # mostra cada tool call (inclusive dos subagentes)
+  show_reasoning: true
+
+security:
+  protected_instruction_files: true  # agente só edita AGENTS.md com sua aprovação
+  protected_instruction_extra_patterns: []
+
+lsp:
+  enabled: true
+  trusted_workspaces:
+    - "__REPO__"
+
+# ── Hooks (harness + painel) ─────────────────────────────────────────────────
+hooks:
+  pre_tool_call:
+    - matcher: "terminal|write_file|patch"
+      command: "python3 __REPO__/hermes/hooks/guard.py"
+      timeout: 10
+    - command: "python3 __REPO__/hermes/hooks/log_event.py"
+      timeout: 5
+  post_tool_call:
+    - matcher: "write_file|patch"
+      command: "python3 __REPO__/hermes/hooks/post_edit.py"
+      timeout: 30
+    - command: "python3 __REPO__/hermes/hooks/log_event.py"
+      timeout: 5
+  pre_llm_call:
+    - command: "python3 __REPO__/hermes/hooks/inject_context.py"
+      timeout: 5
+  subagent_stop:
+    - command: "python3 __REPO__/hermes/hooks/log_event.py"
+      timeout: 5
+  on_session_start:
+    - command: "python3 __REPO__/hermes/hooks/log_event.py"
+      timeout: 5
+  on_session_end:
+    - command: "python3 __REPO__/hermes/hooks/log_event.py"
+      timeout: 5
+hooks_auto_accept: false
