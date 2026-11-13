@@ -67,6 +67,28 @@ def reachable(url: str) -> bool:
         return False
 
 
+def metric_value(run, metric_name: str):
+    if run is None:
+        return None
+    candidates = [
+        f"metrics.{metric_name}",
+        f"metrics.{metric_name}/mean",
+        f"metrics.{metric_name}/value",
+        metric_name,
+    ]
+    for key in candidates:
+        if key in run:
+            value = run.get(key)
+            if value is not None and not pd.isna(value):
+                return float(value)
+    for key, value in run.items():
+        key_text = str(key)
+        if key_text.endswith(f".{metric_name}") or key_text.endswith(f".{metric_name}/mean"):
+            if value is not None and not pd.isna(value):
+                return float(value)
+    return None
+
+
 def retrieve_only(retriever, query, niche):
     docs = retriever.retrieve(query, niche)
     return {
@@ -300,15 +322,22 @@ def render_metrics(settings: Settings, mlflow_ok: bool):
         return
     choice = st.selectbox("Avaliação", judged["label"].tolist())
     run = judged[judged["label"] == choice].iloc[0]
-    means = {n: run.get(f"metrics.{n}/mean") for n in METRICS}
+    means = {n: metric_value(run, n) for n in METRICS}
     previous = judged[judged["start_time"] < run["start_time"]].head(1)
     cols = st.columns(len(METRICS) + 1)
     for col, (name, label) in zip(cols, METRICS.items()):
-        delta = None
-        if not previous.empty and pd.notna(previous.iloc[0].get(f"metrics.{name}/mean")):
-            delta = f"{means[name] - previous.iloc[0][f'metrics.{name}/mean']:+.2f}"
-        col.metric(label, f"{means[name]:.2f}", delta=delta)
-    errors = run.get("metrics.error/mean")
+        current = means.get(name)
+        previous_mean = metric_value(previous.iloc[0], name) if not previous.empty else None
+        if current is None or pd.isna(current):
+            value = "—"
+            delta = None
+        else:
+            value = f"{float(current):.2f}"
+            delta = None
+            if previous_mean is not None and not pd.isna(previous_mean):
+                delta = f"{float(current) - float(previous_mean):+.2f}"
+        col.metric(label, value, delta=delta)
+    errors = metric_value(run, "error")
     cols[-1].metric("Erros", f"{(errors or 0):.0%}")
     st.caption(
         f"Modelo {run.get('params.chat_model')} · juiz {run.get('params.judge_model')} · "
