@@ -108,3 +108,36 @@ def test_metrics_tab_reads_judged_mlflow_runs(app_env, documents, isolated_track
     assert accuracy.delta == "+2.00"
     picker = next(s for s in app.selectbox if s.label == "Avaliação")
     assert picker.options[0].startswith("rag-bm25-k5")
+
+
+def test_voice_question_is_transcribed_and_answered_once(app_env, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    from rag_cognus import speech
+
+    calls = []
+    monkeypatch.setattr(speech, "available", lambda: True)
+    monkeypatch.setattr(app_env, "transcriber_for", lambda name: "modelo")
+    monkeypatch.setattr(
+        speech, "transcribe", lambda model, audio: calls.append(audio) or "storytelling"
+    )
+    app = AppTest.from_function(run_app, default_timeout=20).run()
+    app.toggle[0].set_value(False).run()  # só recuperação: não precisa de Ollama
+    app.audio_input[0].set_value(("pergunta.wav", b"RIFF-audio", "audio/wav")).run()
+    assert not app.exception
+    assert app.chat_message[0].markdown[0].value == "🎙️ storytelling"
+    assert "Encontrei 1 trecho" in app.chat_message[1].markdown[0].value
+    app.run()  # o mesmo áudio continua no widget; não deve responder de novo
+    assert len(app.chat_message) == 2 and calls == [b"RIFF-audio"]
+
+
+def test_app_works_without_whisper_installed(app_env, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    from rag_cognus import speech
+
+    monkeypatch.setattr(speech, "available", lambda: False)
+    app = AppTest.from_function(run_app, default_timeout=20).run()
+    assert not app.exception
+    assert not app.audio_input
+    assert any("[audio]" in c.value for c in app.caption)
