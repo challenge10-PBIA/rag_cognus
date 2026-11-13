@@ -357,6 +357,27 @@ def render_metrics(settings: Settings, mlflow_ok: bool):
         f"{settings.tracking_uri}/#/experiments/{run['experiment_id']}/runs/{run['run_id']}",
     )
 
+def audio_input(label, sample_rate=16000, disabled=False):
+    """Recebe áudio do microfone e retorna bytes WAV."""
+    import sounddevice as sd
+    import numpy as np
+    import streamlit as st
+    from scipy.io.wavfile import write
+
+    if disabled:
+        st.audio(b"", format="audio/wav")
+        return None
+
+    duration = st.number_input("Duração (s)", min_value=1, max_value=30, value=5, step=1)
+    record_button = st.button("Gravar áudio", key="record_audio")
+    if record_button:
+        with st.spinner("Gravando…"):
+            recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1)
+            sd.wait()
+            wav_bytes = write_wav_bytes(recording, sample_rate)
+            st.audio(wav_bytes, format="audio/wav")
+            return wav_bytes
+    return None
 
 def main():
     load_dotenv(ROOT / ".env", override=True)
@@ -441,6 +462,7 @@ def main():
     with chat_tab:
         chat_col = st.container()
         query = st.chat_input("Pergunte sobre comunicação, apresentações ou voz…", max_chars=3000)
+        audio_bytes = audio_input("ou grave sua pergunta", disabled=bool(query))
         if query:
             st.session_state.messages.append({"role": "user", "content": query})
             message = {
