@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import wave
 
@@ -10,17 +9,26 @@ import numpy as np
 
 from rag_cognus.config import Settings
 
-INSTALL_HINT = "Para perguntar por voz, instale: pip install -e '.[audio]'"
+INSTALL_HINT = (
+    "Para perguntar por voz, ative o venv do projeto e rode: "
+    "source .venv/bin/activate && python -m pip install -e '.[audio]'"
+)
 
 
 def available() -> bool:
-    return importlib.util.find_spec("faster_whisper") is not None
+    try:
+        import faster_whisper  # noqa: F401
+    except Exception:
+        return False
+    return True
 
 
 def load_transcriber(settings: Settings):
     """Carrega o Whisper local. O modelo é baixado na primeira vez."""
-    from faster_whisper import WhisperModel
-
+    try:
+        from faster_whisper import WhisperModel
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(INSTALL_HINT) from exc
     return WhisperModel(settings.whisper_model, device="cpu", compute_type="int8")
 
 

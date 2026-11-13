@@ -15,6 +15,9 @@ python -m pip install -e '.[dev,ui,audio]'
 cp .env.example .env
 ```
 
+> Importante: o comando de instalação deve ser executado com o venv do projeto ativo. Se o
+> `streamlit` ou o `faster-whisper` estiverem em outro ambiente, a feature de áudio não aparece.
+
 No `.env`, preencha `DATABRICKS_WAREHOUSE_ID` e escolha como conectar ao Databricks:
 
 - **Token:** `DATABRICKS_HOST` + `DATABRICKS_TOKEN`. Se os dois estiverem preenchidos,

@@ -50,3 +50,9 @@ def test_empty_invalid_or_silent_audio_gives_clear_error():
         speech.transcribe(FakeWhisper(["x"]), b"nao-e-wav")
     with pytest.raises(ValueError, match="Não entendi"):
         speech.transcribe(FakeWhisper(["  "]), make_wav())
+
+
+def test_install_hint_points_to_project_venv():
+    assert ".venv" in speech.INSTALL_HINT
+    assert "source .venv/bin/activate" in speech.INSTALL_HINT
+    assert "python -m pip install -e '.[audio]'" in speech.INSTALL_HINT
