@@ -61,3 +61,44 @@ def transcribe(model, wav_bytes: bytes) -> str:
     if not text:
         raise ValueError("Não entendi o áudio. Fale mais perto do microfone e tente de novo.")
     return text
+
+
+# Sem contexto, o Whisper "limpa" hesitações; um prompt com vícios o leva a transcrevê-los.
+VERBATIM_PROMPT = "Ééé, então, tipo, né, hum... é que, hã, eu acho que, tipo assim."
+
+
+def transcribe_words(model, wav_bytes: bytes) -> dict:
+    """Transcrição literal com timestamps por palavra (para as métricas da sessão)."""
+    if not wav_bytes:
+        raise ValueError("Áudio vazio: grave novamente.")
+    try:
+        audio = wav_to_array(wav_bytes)
+    except (wave.Error, EOFError) as exc:
+        raise ValueError(f"Áudio inválido: {exc}") from exc
+    segments, _ = model.transcribe(
+        audio,
+        language="pt",
+        vad_filter=True,
+        word_timestamps=True,
+        initial_prompt=VERBATIM_PROMPT,
+        condition_on_previous_text=False,
+    )
+    words, texts = [], []
+    for segment in segments:
+        texts.append(segment.text.strip())
+        for w in segment.words or []:
+            if w.word.strip():
+                words.append(
+                    {
+                        "word": w.word.strip(),
+                        "start": float(w.start),
+                        "end": float(w.end),
+                        "probability": float(w.probability),
+                    }
+                )
+    return {
+        "text": " ".join(t for t in texts if t),
+        "words": words,
+        "audio": audio,
+        "duration": len(audio) / WHISPER_RATE,
+    }

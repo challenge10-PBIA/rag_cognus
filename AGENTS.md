@@ -17,6 +17,12 @@ MLflow **local** (`http://127.0.0.1:5001`; URIs `databricks://` são proibidas).
 | `evaluation.py` | Avaliação em lote → MLflow | `tests/test_evaluation.py` |
 | `chat_app.py` | UI Streamlit | `tests/test_chat_app.py` |
 | `speech.py` | Áudio → texto (faster-whisper) | `tests/test_speech.py` |
+| `llm.py` | Fábrica única do ChatOllama (num_ctx/keep_alive do `.env`) | `tests/test_config.py` |
+| `agents/` | Agentes de evidências e de comunicação, pipeline e juízes (spec 001) | `tests/test_agents.py` |
+| `agents_ui.py` | Aba 🧠 Agentes do Streamlit | `tests/test_chat_app.py` |
+| `api/` | API FastAPI do front (`rag-cognus api`), SQLite local (spec 002) | `tests/test_api.py` |
+| `speech_analysis.py` | Ritmo, pausas, vícios, clareza, dicção da sessão | `tests/test_speech_analysis.py` |
+| `progress.py` | Streak, períodos, nível, conquistas, desafios | `tests/test_progress.py` |
 | `cli.py` | Comando `rag-cognus` | — |
 
 ## Comandos

@@ -8,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_cognus.config import Settings
+from rag_cognus.llm import make_ollama
 from rag_cognus.retrieval import GoldRetriever
 
 ABSTENTION = "Não encontrei evidências suficientes na base para responder com segurança."
@@ -31,18 +32,7 @@ class Answer(BaseModel):
 
 
 def make_chat(settings: Settings):
-    from langchain_ollama import ChatOllama
-
-    return ChatOllama(
-        model=settings.chat_model,
-        base_url=settings.ollama_url,
-        temperature=0,
-        reasoning=False,
-        format=Answer.model_json_schema(),
-        num_ctx=8192,
-        num_predict=600,
-        client_kwargs={"timeout": 300},
-    )
+    return make_ollama(settings, Answer, num_predict=600)
 
 
 class RagPipeline:

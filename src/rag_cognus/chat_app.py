@@ -17,6 +17,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from rag_cognus import speech
+from rag_cognus.agents_ui import render_agents
 from rag_cognus.chain import RagPipeline
 from rag_cognus.config import Settings
 from rag_cognus.evaluation import EVAL_TAG, configure_tracking
@@ -473,7 +474,9 @@ def main():
     st.sidebar.caption(f"Gold carregada · {count} trechos")
     st.session_state.setdefault("messages", [])
 
-    chat_tab, evidence_tab, metrics_tab = st.tabs(["💬 Conversa", "📚 Evidências", "📊 Métricas"])
+    chat_tab, evidence_tab, metrics_tab, agents_tab = st.tabs(
+        ["💬 Conversa", "📚 Evidências", "📊 Métricas", "🧠 Agentes"]
+    )
     with chat_tab:
         chat_col = st.container()
         query = st.chat_input("Pergunte sobre comunicação, apresentações ou voz…", max_chars=3000)
@@ -552,6 +555,13 @@ def main():
         render_evidence(st.session_state.messages)
     with metrics_tab:
         render_metrics(settings, mlflow_ok)
+    with agents_tab:
+        transcribe = (
+            (lambda audio: speech.transcribe(transcriber_for(settings.whisper_model), audio))
+            if speech.available()
+            else None
+        )
+        render_agents(retriever, config, NICHES[niche_label], score, mlflow_ok, transcribe)
 
 
 if __name__ == "__main__":

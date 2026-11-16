@@ -25,6 +25,13 @@
       "skillPath": "meeting-insights-analyzer/SKILL.md",
       "computedHash": "07290d48e9e3da97b145fbe85516ca32435c1141c8863e152da2b7d7543bb00a"
     },
+    "shadcn": {
+      "source": "shadcn-ui/ui",
+      "commit": "e62c9435fff729a175f38983dee73b2cb4f6a069",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "388962d16c7a4f13aaeee0d8f128e50a87df8553d42ef7988c39c0e1c74a40e8"
+    },
     "test-driven-development": {
       "source": "addyosmani/agent-skills",
       "sourceType": "github",
