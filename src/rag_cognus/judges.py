@@ -14,6 +14,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_cognus.config import Settings
+from rag_cognus.llm import make_ollama
 
 # Nome técnico -> rótulo exibido no app. A ordem fixa define cor e posição nos gráficos.
 METRICS = {
@@ -73,18 +74,7 @@ TRECHOS: {context}"""
 
 def make_judge(settings: Settings, chat=None):
     if chat is None:
-        from langchain_ollama import ChatOllama
-
-        chat = ChatOllama(
-            model=settings.judge,
-            base_url=settings.ollama_url,
-            temperature=0,
-            reasoning=False,
-            format=ResponseJudgment.model_json_schema(),
-            num_ctx=8192,
-            num_predict=700,
-            client_kwargs={"timeout": 300},
-        )
+        chat = make_ollama(settings, ResponseJudgment, model=settings.judge, num_predict=700)
     prompt = ChatPromptTemplate.from_messages([("system", SYSTEM), ("human", HUMAN)])
     return prompt | chat | JsonOutputParser()
 

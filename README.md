@@ -80,6 +80,31 @@ defina `OLLAMA_JUDGE_MODEL` no `.env`.
   avaliações e mapa de calor das notas por pergunta.
 - A barra lateral mostra se Ollama e MLflow estão no ar.
 
+## Agentes especializados
+
+Dois agentes locais (Qwen no Ollama) apoiam o treino de apresentação. Cada execução vira um
+trace `AGENT` no MLflow (tag `agent=evidence|communication|pipeline`); com **Avaliar
+respostas** ligado, as notas do juiz entram no trace. Especificação em
+[specs/001-agentes-especializados.md](specs/001-agentes-especializados.md).
+
+| Agente | Entrada | Saída |
+|---|---|---|
+| **Evidências** | Tema (pode ser composto) | Subperguntas, afirmações com `chunk_id`, conflitos, lacunas e confiança |
+| **Comunicação** | Texto digitado, fala gravada ou síntese + público, contexto, minutos e tom | Texto adaptado, mudanças, dicas de ensaio, tempo estimado e legibilidade |
+
+No app, use a aba **🧠 Agentes** (o botão *Adaptar esta síntese* leva o resultado de um
+agente ao outro). Na CLI:
+
+```bash
+rag-cognus synthesize "Como reduzir a ansiedade e aquecer a voz antes de um pitch?" --judge
+rag-cognus adapt --file roteiro.txt --audience executivo --context pitch --minutes 2
+rag-cognus adapt --topic "Escuta ativa em reuniões" --audience estudante --context aula
+```
+
+Temas compostos são divididos pelo modelo leve (`OLLAMA_FAST_MODEL`, ex.: `qwen3.5:4b`);
+a síntese e a adaptação usam `OLLAMA_CHAT_MODEL`. Mantenha o mesmo `OLLAMA_NUM_CTX` para todos
+os usos do modelo: valores diferentes fazem o Ollama recarregá-lo a cada troca.
+
 **Pergunta por voz:** na aba Conversa, grave a pergunta pelo microfone do navegador.
 O áudio é transcrito localmente pelo Whisper (`faster-whisper`, modelo em `WHISPER_MODEL`)
 e segue o mesmo caminho da pergunta digitada; no MLflow o trace recebe `input_mode=voice`.
