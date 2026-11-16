@@ -1,39 +1,28 @@
-"""Gera relatórios PDF com métricas após testar >= 50 questões para validação do RAG Cognos."""
+"""Gera perguntas para validar o RAG Cognus com >= 50 questões (base para relatório PDF)."""
 
 from __future__ import annotations
 
-import json
-import random
-try: 
-    from reportlab.lib.pagesizes import letter, A4
-    
-except ImportError as exc:   
-    print(f"Precisa instalar relatórios PDF: pip install 'reportlab>=4.2'")
-
-
-METRICS = {  # mesmas notas do judges.py  
+METRICS = {  # mesmas notas do judges.py
     "context_relevance": "Relevância do contexto",
-    "groundedness": "Fidelidade às fontes", 
+    "groundedness": "Fidelidade às fontes",
     "answer_relevance": "Relevância da resposta",
     "accuracy": "Acurácia",
-    "professionalism": "Profissionalismo"    
+    "professionalism": "Profissionalismo",
+}
+
+NICHE_TOPICS = {  # perguntas-base por nicho
+    "todos": [
+        "Como organizar uma apresentação sobre liderança e comunicação?",
+        "Quais técnicas ajudam a responder perguntas difíceis em reuniões?",
+        "Que dicas existem para lidar com gagueira e disfluências ao falar em público?",
+    ],
 }
 
 
-def generate_validated_questions(nichest=None, n_qs: int=50):  
-    """Gera >= 50 questões cobrindo todos os nichos do projeto."""
-   
-   if not nichest: 
-       NICHE_TOPICS = { # Questões validadas para cada especialidade de Cognition
-   
-           "todos": ["Organizar apresentação sobre liderança e comunicação. ", 
-                      "Explicar técnicas para perguntas difíceis em reuniões.",  
-                      "Dicas gagueira e disfluências vocais públicas."],
-            
-       } 
-  
-   
-     # Mistura base + variações aleatórias, >= 50 questões total       
-    base = random.choice(NICHE_TOPICS.get("todos", [])) 
-   return [f"{base} (questão {i+1:03d})" for i in range(n_qs)]
-
+def generate_validated_questions(niches=None, n_qs: int = 50) -> list[str]:
+    """Gera n_qs questões (padrão 50) alternando as perguntas-base dos nichos pedidos."""
+    topics = NICHE_TOPICS if not niches else {n: NICHE_TOPICS[n] for n in niches}
+    base = [q for questions in topics.values() for q in questions]
+    if not base:
+        raise ValueError("Nenhuma pergunta-base para os nichos informados.")
+    return [f"{base[i % len(base)]} (questão {i + 1:03d})" for i in range(n_qs)]
