@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from _common import ROOT, log_event, read_payload, rel, reply, tool_path
@@ -27,8 +28,10 @@ DANGEROUS = [
     (r"databricks://", "tracking no Databricks é proibido neste projeto"),
     (r"\bcat\s+\.env\b|\bprintenv\b.*TOKEN", "não exponha segredos do .env"),
 ]
-PROTECTED = (".env", "uv.lock", "mlruns/", "mlartifacts/", "data/", ".git/")
-WRITE_TOOLS = {"write_file", "patch", "edit_file", "create_file"}
+PROTECTED = (".env", "uv.lock", "mlruns/", "mlartifacts/", ".git/")
+# Nomes do Hermes e do Claude Code (o mesmo script atende os dois).
+SHELL_TOOLS = {"terminal", "Bash"}
+WRITE_TOOLS = {"write_file", "patch", "edit_file", "create_file", "Edit", "Write", "MultiEdit"}
 
 
 def _block(reason: str, payload: dict) -> None:
@@ -40,7 +43,11 @@ def _block(reason: str, payload: dict) -> None:
             "reason": reason,
         }
     )
-    reply({"decision": "block", "reason": f"[guard] {reason}"})
+    message = f"[guard] {reason}"
+    reply({"decision": "block", "reason": message})
+    # Exit 2 + stderr bloqueia tanto no Hermes quanto no Claude Code.
+    sys.stderr.write(message + "\n")
+    raise SystemExit(2)
 
 
 def _modified(path: str) -> bool:
@@ -55,7 +62,7 @@ def main() -> None:
     tool = p.get("tool_name") or ""
     tool_input = p.get("tool_input") or {}
 
-    if tool == "terminal":
+    if tool in SHELL_TOOLS:
         cmd = str(tool_input.get("command") or tool_input.get("cmd") or "")
         for pattern, reason in DANGEROUS:
             if re.search(pattern, cmd):

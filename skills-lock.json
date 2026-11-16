@@ -19,6 +19,12 @@
       "skillPath": "skills/devtools-business-model/SKILL.md",
       "computedHash": "c5981b269d4918e135b459f2b467614492d7826718d22bf6d5fff57f5125a632"
     },
+    "meeting-insights-analyzer": {
+      "source": "ComposioHQ/awesome-claude-skills",
+      "sourceType": "github",
+      "skillPath": "meeting-insights-analyzer/SKILL.md",
+      "computedHash": "07290d48e9e3da97b145fbe85516ca32435c1141c8863e152da2b7d7543bb00a"
+    },
     "test-driven-development": {
       "source": "addyosmani/agent-skills",
       "sourceType": "github",

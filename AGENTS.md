@@ -37,10 +37,23 @@ MLflow **local** (`http://127.0.0.1:5001`; URIs `databricks://` são proibidas).
 - Edite o mínimo; leia o arquivo antes de alterar; use `patch` em vez de reescrever.
 - Testes não acessam rede: use fakes/monkeypatch (veja `tests/conftest.py`).
 - Linha ≤ 100 colunas, `ruff format`. Textos de UI e mensagens em português.
-- Não toque em `.env`, `uv.lock`, `mlruns/`, `data/` sem pedido explícito.
+- Não toque em `.env`, `uv.lock`, `mlruns/` sem pedido explícito; `data/` só o
+  engenheiro de dados.
 - Não faça `git push`, `git reset --hard` nem commits sem pedido.
 
-## Multiagentes
-Para tarefas com mais de um módulo, carregue a skill `rag-orchestrator` e delegue com
-`delegate_task`. Cada subagente recebe: objetivo, arquivos exatos, AC da spec e o comando
-de verificação. Subagentes devolvem resumo curto + caminhos alterados + saída do harness.
+## Time multiagente
+Um **líder técnico** conversa com o usuário, escreve o plano e delega; três engenheiros
+executam no seu domínio e devolvem relatório no formato combinado.
+
+| Papel | Domínio |
+|---|---|
+| Líder técnico | Pedido → spec → plano → delegação → harness final → relatório ao usuário |
+| Engenheiro de dados | `gold.py`, Databricks em `config.py`, `data/`, `notebooks/`, schema dos documentos |
+| Engenheiro de IA | `retrieval.py`, `chain.py`, `judges.py`, `metrics.py`, `evaluation.py`, `speech.py`, lógica do `chat_app.py` |
+| Engenheiro DevOps | `.github/`, `pyproject.toml`, `uv.lock`, `cli.py`, MLflow/Streamlit local, `hermes/`, `.claude/` |
+
+- **Claude Code:** `.claude/agents/` (o líder é o agente principal da sessão).
+- **Hermes:** skill `rag-orchestrator` com `delegate_task`.
+
+Cada engenheiro recebe: objetivo, arquivos exatos, AC da spec, restrições e o comando de
+verificação. Paralelo só quando os arquivos não se sobrepõem.
