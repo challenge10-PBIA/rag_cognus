@@ -80,6 +80,30 @@ defina `OLLAMA_JUDGE_MODEL` no `.env`.
   avaliações e mapa de calor das notas por pergunta.
 - A barra lateral mostra se Ollama e MLflow estão no ar.
 
+## API do front web
+
+O app web (repo [`frontend_UI`](https://github.com/challenge10-PBIA/frontend_UI)) usa a API
+local deste repositório. Ela analisa sessões de fala gravadas, guarda o progresso em SQLite
+(`.cache/app/`) e expõe RAG e agentes. Especificação em
+[specs/002-api-sessoes-progresso.md](specs/002-api-sessoes-progresso.md); plano de produto em
+[docs/plano-frontend.md](docs/plano-frontend.md).
+
+```bash
+python -m pip install -e '.[api,audio]'
+rag-cognus api                    # http://127.0.0.1:8000 · OpenAPI em /docs
+```
+
+| Pilar da sessão | Medida | Nota 100 quando |
+|---|---|---|
+| Ritmo & Cadência | palavras/min (sem vícios), timestamps do Whisper | 120–160 ppm |
+| Pausas Conscientes | intervalos de 0,4–2 s; silêncios > 3 s penalizam | 3–8 pausas/min |
+| Vícios Vocais | éé/eh, hã, hum, "tipo", "né" | nenhum vício |
+| Clareza da Mensagem | legibilidade (Flesch PT) da transcrição | texto fácil de seguir |
+
+O índice da sessão é a média dos quatro pilares; números nunca vêm do LLM. Ansiedade é
+autoavaliação do usuário (1–5), não medida. O Whisper tende a apagar hesitações: a
+transcrição usa um prompt com vícios para registrá-las, mas valide com gravações reais.
+
 ## Agentes especializados
 
 Dois agentes locais (Qwen no Ollama) apoiam o treino de apresentação. Cada execução vira um

@@ -49,6 +49,23 @@ def run_agents(args, settings: Settings, retriever, text: str | None = None):
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+def serve_api(host: str, port: int):
+    import mlflow
+    import uvicorn
+
+    from rag_cognus.api.app import Services, create_app
+    from rag_cognus.evaluation import configure_tracking
+
+    settings = Settings.from_env()
+    try:
+        configure_tracking(settings)
+    except Exception as exc:  # sem MLflow a API funciona; só os traces ficam de fora
+        print(f"Aviso: MLflow indisponível ({exc}); traces desativados.")
+        mlflow.tracing.disable()
+    print(f"Cognus API em http://{host}:{port}  (documentação: /docs)")
+    uvicorn.run(create_app(Services(settings)), host=host, port=port)
+
+
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser(description="Cognus: Gold → LangChain/Ollama → MLflow local")
@@ -57,6 +74,9 @@ def main():
     server = sub.add_parser("mlflow-local", help="Abrir o MLflow open source local")
     server.add_argument("--port", type=int, default=5001)
     server.add_argument("--data-dir", default=".cache/mlflow")
+    api = sub.add_parser("api", help="Subir a API do front web (FastAPI, OpenAPI em /docs)")
+    api.add_argument("--host", default="127.0.0.1")
+    api.add_argument("--port", type=int, default=8000)
     sub.add_parser("sync-gold", help="Ler a Gold com OAuth e SQL Warehouse")
     ask = sub.add_parser("ask")
     ask.add_argument("query")
@@ -114,6 +134,10 @@ def main():
             str(folder / "artifacts"),
         ]
         raise SystemExit(subprocess.call(command))
+
+    if args.command == "api":
+        serve_api(args.host, args.port)
+        return
 
     settings = Settings.from_env()
     if getattr(args, "backend", None):
