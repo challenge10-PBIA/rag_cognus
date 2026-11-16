@@ -9,8 +9,8 @@ model:
   base_url: "http://127.0.0.1:11434/v1"
   # Janela de contexto. 32K cabe numa GPU de 8–12 GB com o 9B; com 16 GB+ use 65536.
   # O num_ctx é enviado em toda requisição (o padrão do Ollama seria 2048).
-  context_length: 32768
-  ollama_num_ctx: 32768
+  context_length: 64000
+  ollama_num_ctx: 64000
 
 agent:
   max_turns: 120
