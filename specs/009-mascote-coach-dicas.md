@@ -98,6 +98,15 @@ Tópicos (fonte única em `coach.TOPICS`): `index`, `pace`, `pauses`, `fillers`,
 - **AC-16:** `prefers-reduced-motion`: balão sem animação de entrada. Balão com
   `aria-live="polite"`.
 
+- **AC-17 (contexto da tela):** Um estado compartilhado do front (`coach-context.ts`, sem
+  dependência nova) leva o contexto da tela ao mascote. Em `/cognus`, quando a avaliação da
+  resposta fica `done`, o painel de avaliação publica o `ask_id`; o mascote passa a enviá-lo
+  em `topics`/`explain`, e "Como esta resposta foi avaliada?" aparece entre os tópicos. Ao
+  sair da tela ou trocar de pergunta, o `ask_id` anterior é limpo.
+- **AC-18:** O resultado da avaliação ganha o botão "Me explica estas notas", que abre o
+  painel do mascote já pedindo o tópico `ask_evaluation`; fechar o painel devolve o foco ao
+  mascote.
+
 ## Fora de escopo
 - Chat livre com o mascote; voz (TTS); dicas geradas por LLM; dicas durante a gravação.
 - Relatórios diário/semanal/mensal (spec futura).
@@ -114,4 +123,5 @@ Tópicos (fonte única em `coach.TOPICS`): `index`, `pace`, `pauses`, `fillers`,
 | 1 | `tests/test_coach.py` → `coach.py` | engenheiro-ia | AC-1…AC-7 |
 | 2 | `tests/test_api.py` → `api/*` | engenheiro-ia | AC-3, AC-8…AC-11 |
 | 3 | `mascot-dock.tsx`, `app-shell.tsx`, `profile-view.tsx`, `lib/api/*` | front | AC-12…AC-16 |
+| 3b | `coach-context.ts`, `mascot-dock.tsx`, `cognus/ask-answer.tsx` | front | AC-17, AC-18 |
 | 4 | ambos | líder | `check.py` + `npm run typecheck && lint && build` |

@@ -994,3 +994,16 @@ def test_privacy_rejects_invalid_body(client, payload):  # spec 010 AC-7a
 def test_onboarding_has_privacy_step_and_version_2(client):  # spec 010 AC-2, AC-7b
     assert api_app.ONBOARDING_VERSION == 2
     assert client.put("/v1/onboarding", json={"step": "privacy"}).json()["step"] == "privacy"
+
+
+def test_mascot_explains_ask_evaluation(client):  # spec 009 AC-3, AC-4, AC-17
+    ask_id = client.post("/v1/ask", json={"query": "storytelling"}).json()["ask_id"]
+    assert client.get(f"/v1/ask/{ask_id}/evaluation").json()["status"] == "done"
+    params = {"route": "/cognus", "ask_id": ask_id}
+    ids = [t["id"] for t in client.get("/v1/mascot/topics", params=params).json()]
+    assert ids[0] == "ask_evaluation"
+    body = client.post(
+        "/v1/mascot/explain", json={"topic": "ask_evaluation", "route": "/cognus", "ask_id": ask_id}
+    ).json()
+    labels = {f["label"] for f in body["facts"]}
+    assert {"Qualidade geral", "Fundamentação nas fontes", "Integridade das citações"} <= labels
