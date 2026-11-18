@@ -7,6 +7,114 @@ from rag_cognus.config import Settings
 from rag_cognus.gold import save_snapshot
 
 
+def demonstration(phoneme="r_tap"):
+    stages_map = {
+        "r_tap": [
+            {
+                "index": 0,
+                "title": "1. Preparação",
+                "shortLabel": "1. Preparação",
+                "caption": "Preparar ápice",
+                "segmentLabel": "ca-",
+                "targetWord": "caro",
+                "durationMs": 1000,
+                "gesture": "neutral_prep",
+                "contactRegion": "none",
+                "airflow": "oral_central",
+                "velum": "raised",
+                "voicingState": "voiced",
+            },
+            {
+                "index": 1,
+                "title": "2. Toque breve",
+                "shortLabel": "2. Toque /ɾ/",
+                "caption": "Toque alveolar único",
+                "segmentLabel": "-r-",
+                "targetWord": "caro",
+                "durationMs": 1000,
+                "gesture": "alveolar_tap",
+                "contactRegion": "alveolar",
+                "airflow": "oral_central",
+                "velum": "raised",
+                "voicingState": "voiced",
+            },
+            {
+                "index": 2,
+                "title": "3. Soltura",
+                "shortLabel": "3. Soltura",
+                "caption": "Soltura para a vogal",
+                "segmentLabel": "-o",
+                "targetWord": "caro",
+                "durationMs": 1000,
+                "gesture": "release_vowel",
+                "contactRegion": "none",
+                "airflow": "oral_central",
+                "velum": "raised",
+                "voicingState": "voiced",
+            },
+        ],
+        "l_lateral": [
+            {
+                "index": 0,
+                "title": "1. Preparação",
+                "shortLabel": "1. Preparação",
+                "caption": "Elevar ponta",
+                "segmentLabel": "ca-",
+                "targetWord": "calo",
+                "durationMs": 1000,
+                "gesture": "neutral_prep",
+                "contactRegion": "none",
+                "airflow": "oral_central",
+                "velum": "raised",
+                "voicingState": "voiced",
+            },
+            {
+                "index": 1,
+                "title": "2. Apoio lateral",
+                "shortLabel": "2. Lateral /l/",
+                "caption": "Contato sustentado e ar lateral",
+                "segmentLabel": "-l-",
+                "targetWord": "calo",
+                "durationMs": 1800,
+                "gesture": "alveolar_lateral_hold",
+                "contactRegion": "dental_alveolar",
+                "airflow": "oral_lateral",
+                "velum": "raised",
+                "voicingState": "voiced",
+            },
+            {
+                "index": 2,
+                "title": "3. Soltura",
+                "shortLabel": "3. Soltura",
+                "caption": "Soltura suave",
+                "segmentLabel": "-o",
+                "targetWord": "calo",
+                "durationMs": 1000,
+                "gesture": "release_vowel",
+                "contactRegion": "none",
+                "airflow": "oral_central",
+                "velum": "raised",
+                "voicingState": "voiced",
+            },
+        ],
+    }
+    return {
+        "schemaVersion": 2,
+        "contractVersion": "2026-11-18.v2",
+        "profileId": phoneme,
+        "summary": "Demonstração articulatória estruturada",
+        "targetSequence": [
+            {
+                "word": "caro" if phoneme == "r_tap" else "calo",
+                "ipa": "[ˈka.ɾu]" if phoneme == "r_tap" else "[ˈka.lu]",
+                "focus": "Alvo principal",
+            }
+        ],
+        "regionalVariants": [],
+        "stages": stages_map.get(phoneme, stages_map["r_tap"]),
+    }
+
+
 def exercise(phoneme="r_tap", eid="fonema-r-tepe"):
     return {
         "schemaVersion": 1,
@@ -25,6 +133,7 @@ def exercise(phoneme="r_tap", eid="fonema-r-tepe"):
         "practicePhrases": ["O caro colar" if phoneme == "r_tap" else "A lua ilumina"],
         "recommendedMode": "espontanea",
         "animationKey": phoneme,
+        "demonstration": demonstration(phoneme),
         "steps": [
             {
                 "title": "Pratique",
@@ -176,3 +285,75 @@ def test_habit_accepts_gold_exercise(tmp_path):
         },
     )
     assert response.status_code == 201
+
+
+def test_demonstration_contract_supports_all_ten_profiles_and_rejects_mismatches():
+    import copy
+    import json
+    from pathlib import Path
+
+    from rag_cognus.phonetics import PhoneticExercise, catalog_from_documents
+
+    catalog_path = (
+        Path(__file__).resolve().parents[2]
+        / "medallion_cognus/conhecimento/catalogos/exercicios_foneticos.json"
+    )
+    raw = json.loads(catalog_path.read_text(encoding="utf-8"))
+    docs = [document(item) for item in raw["exercises"]]
+    catalog = catalog_from_documents(docs)
+    assert len(catalog.exercises) == 10
+    by_pid = {ex.phonemeId: ex for ex in catalog.exercises}
+    assert set(by_pid) == {
+        "r_tap",
+        "l_lateral",
+        "r_strong",
+        "lh_palatal",
+        "nh_nasal",
+        "fricatives_postalveolar",
+        "cluster_r",
+        "cluster_l",
+        "contrast_r_l",
+        "mixed_diction",
+    }
+    for pid, ex in by_pid.items():
+        assert ex.animationKey == pid
+        assert ex.demonstration is not None
+        assert ex.demonstration.schemaVersion == 2
+        assert ex.demonstration.contractVersion == "2026-11-18.v2"
+        assert ex.demonstration.profileId == pid
+        assert len(ex.demonstration.stages) >= 3
+        assert len(ex.demonstration.targetSequence) >= 1
+
+    # AC-2: multi-sound sequences and regional variants
+    assert len(by_pid["r_strong"].demonstration.regionalVariants) >= 2
+    assert {s.voicingState for s in by_pid["fricatives_postalveolar"].demonstration.stages} >= {
+        "voiced",
+        "voiceless",
+    }
+    assert {s.gesture for s in by_pid["contrast_r_l"].demonstration.stages} >= {
+        "alveolar_tap",
+        "alveolar_lateral_hold",
+    }
+    assert any(
+        s.airflow == "nasal" and s.velum == "lowered"
+        for s in by_pid["nh_nasal"].demonstration.stages
+    )
+
+    # AC-3: incompatible profileId or missing required airflow/gesture rejected
+    bad_profile = copy.deepcopy(raw["exercises"][0])
+    bad_profile["demonstration"] = copy.deepcopy(raw["exercises"][1]["demonstration"])
+    with pytest.raises(ValueError, match="profileId"):
+        PhoneticExercise.model_validate(bad_profile)
+
+    bad_nh = copy.deepcopy(raw["exercises"][4])
+    for st in bad_nh["demonstration"]["stages"]:
+        st["airflow"] = "oral_central"
+    with pytest.raises(ValueError, match="nh_nasal"):
+        PhoneticExercise.model_validate(bad_nh)
+
+    bad_contrast = copy.deepcopy(raw["exercises"][8])
+    for st in bad_contrast["demonstration"]["stages"]:
+        if st["gesture"] == "alveolar_lateral_hold":
+            st["gesture"] = "alveolar_tap"
+    with pytest.raises(ValueError, match="contrast_r_l"):
+        PhoneticExercise.model_validate(bad_contrast)
