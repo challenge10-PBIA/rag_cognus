@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS evaluations (
     metrics_json TEXT,
     judges_json TEXT
 );
+CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL
+);
 """
 INTERRUPTED = "Avaliação interrompida."
 
@@ -96,6 +100,23 @@ class Store:
             (name, daily_goal_minutes, mascot_json),
         )
         return self.profile()
+
+    # ---------- estado do app (spec 009 AC-10, spec 010 AC-6) ----------
+    def state(self, key: str, default=None):
+        rows = self._query("SELECT value_json FROM app_state WHERE key = ?", (key,))
+        if not rows:
+            return default
+        try:
+            return json.loads(rows[0]["value_json"])
+        except ValueError:
+            return default
+
+    def set_state(self, key: str, value) -> None:
+        self._query(
+            "INSERT INTO app_state (key, value_json) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+            (key, json.dumps(value, ensure_ascii=False)),
+        )
 
     # ---------- sessões ----------
     def save_session(self, result: dict, record: dict, audio: bytes) -> None:

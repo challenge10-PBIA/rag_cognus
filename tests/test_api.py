@@ -7,6 +7,7 @@ import wave
 from dataclasses import replace
 from types import SimpleNamespace as NS
 
+import mlflow
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -59,6 +60,8 @@ ADAPTED = {
     "rehearsal_tips": ["Respire antes do número principal"],
 }
 
+
+MASCOT_TEXT = {"text": "Ritmo é a velocidade da sua fala.", "mood": "neutro"}
 
 SCORES = dict(zip(METRICS, (5, 4, 5, 3, 4), strict=True))
 JUDGMENT = {k: {"score": v, "reason": f"motivo {k}"} for k, v in SCORES.items()}
@@ -138,6 +141,9 @@ class FakeServices(Services):
 
     def communication_chat(self):
         return self.chat(ADAPTED)
+
+    def mascot_chat(self):
+        return self.fakes.get("mascot") or self.chat(MASCOT_TEXT)
 
     def synthesis_chat(self):
         return self.chat(
@@ -844,3 +850,147 @@ def test_guided_feedback_has_score_and_maintain(client):  # spec 008 AC-8
         assert isinstance(rec["pillar_score"], int) and rec["maintain"] is False
     pillar = next(r for r in result["guided_feedback"] if r["target"]["kind"] == "pillar")
     assert pillar["pillar_score"] == round(result["pillars"][pillar["pillar"]]["score"])
+
+
+# ---------- spec 009: mascote coach ----------
+def test_mascot_tips_by_route(client):  # spec 009 AC-2, AC-9
+    body = client.get("/v1/mascot/tips", params={"route": "/"}).json()
+    assert body["enabled"] is True
+    assert body["tips"][0]["id"] == "home-first-session"
+    assert client.get("/v1/mascot/tips", params={"route": "/x"}).json()["tips"] == []
+
+
+def test_mascot_tips_and_topics_work_without_ollama_or_gold(tmp_path):  # spec 009 AC-9
+    client = TestClient(create_app(FakeServices(tmp_path, chat_fails=True)))
+    assert client.get("/v1/mascot/tips", params={"route": "/metricas"}).status_code == 200
+    assert client.get("/v1/mascot/topics", params={"route": "/"}).status_code == 200
+
+
+def test_mascot_settings_silence_tips_and_persist(tmp_path, documents):  # spec 009 AC-10
+    client = TestClient(create_app(FakeServices(tmp_path, documents)))
+    assert client.get("/v1/mascot/settings").json() == {"tips_enabled": True}
+    assert client.put("/v1/mascot/settings", json={"tips_enabled": False}).json() == {
+        "tips_enabled": False
+    }
+    again = TestClient(create_app(FakeServices(tmp_path, documents)))  # mesmo banco
+    body = again.get("/v1/mascot/tips", params={"route": "/"}).json()
+    assert body == {"tips": [], "enabled": False}
+
+
+def test_mascot_topics_follow_context(client):  # spec 009 AC-4
+    ids = [t["id"] for t in client.get("/v1/mascot/topics", params={"route": "/"}).json()]
+    assert "session_summary" not in ids and "weakest_pillar" not in ids
+    session_id = post_session(client).json()["session_id"]
+    ids = [
+        t["id"]
+        for t in client.get(
+            "/v1/mascot/topics", params={"route": "/", "session_id": session_id}
+        ).json()
+    ]
+    assert ids[:2] == ["session_summary", "weakest_pillar"]
+    unknown = client.get("/v1/mascot/topics", params={"route": "/", "session_id": "nao-existe"})
+    assert "session_summary" not in [t["id"] for t in unknown.json()]
+
+
+def test_mascot_explain_with_llm(client):  # spec 009 AC-5, AC-8
+    response = client.post("/v1/mascot/explain", json={"topic": "pace", "route": "/"})
+    body = response.json()
+    assert response.status_code == 200
+    assert body["source"] == "llm" and body["text"] == MASCOT_TEXT["text"]
+    assert body["topic"] == "pace" and "trace_id" in body
+    mlflow.flush_trace_async_logging()
+    trace = mlflow.get_trace(body["trace_id"])
+    assert trace.info.tags["agent"] == "mascot"
+
+
+def test_mascot_explain_falls_back_without_ollama(tmp_path):  # spec 009 AC-7
+    client = TestClient(create_app(FakeServices(tmp_path, chat_fails=True)))
+    session_id = post_session(client).json()["session_id"]
+    body = client.post(
+        "/v1/mascot/explain",
+        json={"topic": "session_summary", "route": "/", "session_id": session_id},
+    ).json()
+    assert body["source"] == "regras"
+    assert any(f["label"] == "Índice da sessão" for f in body["facts"])
+
+
+def test_mascot_explain_missing_data_is_422(client):  # spec 009 AC-3
+    response = client.post(
+        "/v1/mascot/explain", json={"topic": "session_summary", "route": "/", "session_id": "x"}
+    )
+    assert response.status_code == 422 and "sessão" in response.json()["detail"]
+
+
+def test_mascot_explain_unknown_topic_is_422(client):  # spec 009 AC-11
+    response = client.post("/v1/mascot/explain", json={"topic": "bitcoin", "route": "/"})
+    assert response.status_code == 422
+
+
+# ---------- spec 010: onboarding ----------
+def test_onboarding_starts_needed(client):  # spec 010 AC-1, AC-7
+    body = client.get("/v1/onboarding").json()
+    assert body["needed"] is True and body["step"] is None
+    assert body["completed_version"] is None and body["version"] == api_app.ONBOARDING_VERSION
+
+
+def test_onboarding_saves_step(client):  # spec 010 AC-2
+    assert client.put("/v1/onboarding", json={"step": "mascot"}).json()["step"] == "mascot"
+    assert client.get("/v1/onboarding").json()["step"] == "mascot"
+    assert client.put("/v1/onboarding", json={"step": "fim"}).status_code == 422
+
+
+@pytest.mark.parametrize("status", ["completed", "skipped"])
+def test_onboarding_complete_or_skip(client, status):  # spec 010 AC-3
+    body = client.put("/v1/onboarding", json={"status": status}).json()
+    assert body["needed"] is False and body["completed_at"]
+    assert body["completed_version"] == api_app.ONBOARDING_VERSION
+
+
+def test_onboarding_reset(client):  # spec 010 AC-4
+    client.put("/v1/onboarding", json={"step": "tour"})
+    client.put("/v1/onboarding", json={"status": "completed"})
+    body = client.put("/v1/onboarding", json={"status": "reset"}).json()
+    assert body["needed"] is True and body["step"] is None and body["completed_version"] is None
+
+
+def test_onboarding_new_version_is_needed_again(client, monkeypatch):  # spec 010 AC-5
+    client.put("/v1/onboarding", json={"status": "completed"})
+    monkeypatch.setattr(api_app, "ONBOARDING_VERSION", api_app.ONBOARDING_VERSION + 1)
+    assert client.get("/v1/onboarding").json()["needed"] is True
+
+
+def test_onboarding_persists_and_store_reopens(tmp_path, documents):  # spec 010 AC-6
+    first = TestClient(create_app(FakeServices(tmp_path, documents)))
+    first.put("/v1/onboarding", json={"step": "microphone"})
+    second = TestClient(create_app(FakeServices(tmp_path, documents)))
+    assert second.get("/v1/onboarding").json()["step"] == "microphone"
+    assert second.get("/v1/profile").json()["name"] == "Você"  # perfil intocado
+
+
+# ---------- spec 010: consentimento de dados de uso ----------
+def test_privacy_starts_undecided(client):  # spec 010 AC-7a
+    body = client.get("/v1/privacy").json()
+    assert body["tracking_allowed"] is None and body["decided_at"] is None
+    assert body["decided_version"] is None
+    assert body["policy_version"] == api_app.PRIVACY_POLICY_VERSION
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+def test_privacy_saves_choice_and_persists(tmp_path, documents, allowed):  # spec 010 AC-7a
+    client = TestClient(create_app(FakeServices(tmp_path, documents)))
+    body = client.put("/v1/privacy", json={"tracking_allowed": allowed}).json()
+    assert body["tracking_allowed"] is allowed and body["decided_at"]
+    assert body["decided_version"] == api_app.PRIVACY_POLICY_VERSION
+    again = TestClient(create_app(FakeServices(tmp_path, documents)))
+    assert again.get("/v1/privacy").json()["tracking_allowed"] is allowed
+
+
+@pytest.mark.parametrize("payload", [{}, {"tracking_allowed": True, "extra": 1}])
+def test_privacy_rejects_invalid_body(client, payload):  # spec 010 AC-7a
+    assert client.put("/v1/privacy", json=payload).status_code == 422
+    assert client.get("/v1/privacy").json()["tracking_allowed"] is None
+
+
+def test_onboarding_has_privacy_step_and_version_2(client):  # spec 010 AC-2, AC-7b
+    assert api_app.ONBOARDING_VERSION == 2
+    assert client.put("/v1/onboarding", json={"step": "privacy"}).json()["step"] == "privacy"

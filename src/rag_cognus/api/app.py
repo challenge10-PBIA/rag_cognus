@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from rag_cognus import exercises, feedback, mascot, progress, speech
+from rag_cognus import coach, exercises, feedback, mascot, progress, speech
 from rag_cognus.agents.communication import CommunicationAgent
 from rag_cognus.agents.evidence import EvidenceAgent
 from rag_cognus.agents.pipeline import EvidenceToAudience
@@ -30,6 +30,10 @@ from rag_cognus.config import Settings
 from rag_cognus.speech_analysis import PILLAR_NAMES, analyze_words, energy_contour
 
 ROOT = Path(__file__).resolve().parents[3]
+# Sobe quando o tutorial muda de forma relevante: quem concluiu vê de novo (spec 010 AC-5).
+ONBOARDING_VERSION = 2  # 2: passo de consentimento de dados de uso (spec 010 AC-7b)
+# Sobe quando o texto/uso do consentimento muda: recursos futuros pedem a escolha de novo.
+PRIVACY_POLICY_VERSION = 1
 
 MODES = {
     "daily_pitch": {
@@ -176,6 +180,10 @@ class Services:
         return None
 
     def pleonasm_chat(self):
+        return None
+
+    def mascot_chat(self):
+        """LLM das explicações do mascote (spec 009). None = ChatOllama padrão."""
         return None
 
     def pleonasm_checker(self):
@@ -750,5 +758,111 @@ def create_app(services: Services | None = None) -> FastAPI:
             source=AssessmentSource(source_type="HUMAN", source_id="usuario-local"),
         )
         return Response(status_code=204)
+
+    # ---------- mascote coach (spec 009) ----------
+    def coach_data(session_id: str | None = None, ask_id: str | None = None) -> dict:
+        return {
+            "records": store.records(),
+            "today": date.today(),
+            "profile": current_profile(),
+            "session": store.session(session_id) if session_id else None,
+            "evaluation": store.evaluation(ask_id) if ask_id else None,
+        }
+
+    def mascot_settings() -> dict:
+        return s.MascotSettings(**store.state("mascot_settings", {})).model_dump()
+
+    @app.get("/v1/mascot/settings", response_model=s.MascotSettings)
+    def get_mascot_settings():
+        return mascot_settings()
+
+    @app.put("/v1/mascot/settings", response_model=s.MascotSettings)
+    def put_mascot_settings(body: s.MascotSettings):
+        store.set_state("mascot_settings", body.model_dump())
+        return mascot_settings()
+
+    @app.get("/v1/mascot/tips", response_model=s.MascotTips)
+    def mascot_tips(route: str = Query("/", max_length=200), session_id: str | None = None):
+        if not mascot_settings()["tips_enabled"]:
+            return {"tips": [], "enabled": False}
+        return {"tips": coach.tips(route, coach_data(session_id)), "enabled": True}
+
+    @app.get("/v1/mascot/topics", response_model=list[s.MascotTopic])
+    def mascot_topics(
+        route: str = Query("/", max_length=200),
+        session_id: str | None = None,
+        ask_id: str | None = None,
+    ):
+        return coach.topics(route, coach_data(session_id, ask_id))
+
+    @app.post("/v1/mascot/explain", response_model=s.Explanation)
+    def mascot_explain(body: s.ExplainIn):
+        data = coach_data(body.session_id, body.ask_id)
+        try:
+            topic_facts = coach.facts(body.topic, data)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        agent = coach.MascotCoach(services.settings, chat=services.mascot_chat())
+        result = agent.explain(body.topic, topic_facts, coach.mood_for(body.topic, data))
+        try:
+            trace_id = mlflow.get_last_active_trace_id()
+        except Exception:  # MLflow fora não derruba a explicação
+            trace_id = None
+        return result | {"topic": body.topic, "facts": topic_facts, "trace_id": trace_id}
+
+    # ---------- onboarding (spec 010) ----------
+    def onboarding() -> dict:
+        saved = store.state("onboarding", {})
+        completed = saved.get("completed_version")
+        return {
+            "version": ONBOARDING_VERSION,
+            "completed_version": completed,
+            "completed_at": saved.get("completed_at"),
+            "step": saved.get("step"),
+            "needed": completed != ONBOARDING_VERSION,
+        }
+
+    @app.get("/v1/onboarding", response_model=s.Onboarding)
+    def get_onboarding():
+        return onboarding()
+
+    # ---------- consentimento (spec 010 AC-7a) ----------
+    # Hoje a escolha só é guardada; nada liga ou desliga registros por ela ainda.
+    def privacy() -> dict:
+        saved = store.state("privacy", {})
+        return {
+            "tracking_allowed": saved.get("tracking_allowed"),
+            "decided_at": saved.get("decided_at"),
+            "policy_version": PRIVACY_POLICY_VERSION,
+            "decided_version": saved.get("decided_version"),
+        }
+
+    @app.get("/v1/privacy", response_model=s.Privacy)
+    def get_privacy():
+        return privacy()
+
+    @app.put("/v1/privacy", response_model=s.Privacy)
+    def put_privacy(body: s.PrivacyIn):
+        store.set_state(
+            "privacy",
+            {
+                "tracking_allowed": body.tracking_allowed,
+                "decided_at": _now(),
+                "decided_version": PRIVACY_POLICY_VERSION,
+            },
+        )
+        return privacy()
+
+    @app.put("/v1/onboarding", response_model=s.Onboarding)
+    def put_onboarding(body: s.OnboardingIn):
+        saved = store.state("onboarding", {})
+        if body.step is not None:
+            saved["step"] = body.step
+        if body.status in ("completed", "skipped"):
+            saved |= {"completed_version": ONBOARDING_VERSION, "completed_at": _now()}
+        elif body.status == "reset":
+            saved = {}
+        store.set_state("onboarding", saved)
+        return onboarding()
 
     return app
