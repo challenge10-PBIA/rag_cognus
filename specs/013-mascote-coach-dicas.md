@@ -8,7 +8,9 @@
   `src/components/profile/profile-view.tsx`
 - **Testes:** `tests/test_coach.py` (novo), `tests/test_api.py`; front: typecheck/lint/build
 - **Prompt do agente:** `hermes/agents/communication-agent.md` (papel e regras de tom)
-- **Depende de:** spec 008 (mascote do perfil)
+- **Hermes:** é o papel `[avatar]` da spec 009 (skill `hermes/skills/rag-avatar-agent/`); o
+  papel `[obs]` (`hermes/agents/diagnoser-agent.md`) lê os traces deste agente
+- **Depende de:** spec 008 (mascote do perfil), spec 010 (LLM por papel), spec 011 (trace)
 
 ## Problema
 O mascote só aparece no Perfil, no cabeçalho e no carrossel do diagnóstico. O usuário não tem
@@ -72,8 +74,13 @@ Tópicos (fonte única em `coach.TOPICS`): `index`, `pace`, `pauses`, `fillers`,
   explicação por regras com `source="regras"`.
 - **AC-7:** Falha do LLM (exceção/timeout) → explicação por regras (`glossário + fatos`),
   `source="regras"`, HTTP 200. Nunca 500 por causa do Ollama.
-- **AC-8:** Cada explicação gera trace MLflow com span raiz `AGENT` e tag `agent=mascot`,
-  `topic=<id>`; `trace_id` vem na resposta (pode ser `null` se o MLflow estiver fora).
+- **AC-8:** Cada explicação gera trace MLflow no contrato da spec 011: span raiz
+  `mascot_agent` (`AGENT`) com `inputs={topic, facts}` e `outputs={response, mood, source}`;
+  span `mascot_explain` (`LLM`) com os atributos `model`, `role=fast` e `options` (spec 010);
+  tags `flow=mascot`, `agent=mascot`, `topic=<id>`, `mascot_source=llm|regras`,
+  `chat_model`, `judge_model`. O LLM é criado com `make_ollama(..., role="fast")`. `trace_id`
+  vem na resposta (pode ser `null` se o MLflow estiver fora). O retorno de `explain()` não
+  muda.
 - **AC-9:** `tips` e `topics` não chamam LLM nem Gold e respondem sem Ollama.
 - **AC-10:** `tips_enabled=false` → `GET /v1/mascot/tips` devolve `tips: []` e
   `enabled: false`. Persistido no SQLite (tabela `app_state` chave/valor, criada de forma

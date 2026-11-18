@@ -10,4 +10,4 @@ Textos que explicam o porquê de cada decisão do rag_cognus. Cada um aponta par
 | [hermes-agentes.md](hermes-agentes.md) | Time de agentes no Hermes: papéis, delegação e harness. |
 | [hermes-mcp-grafana.md](hermes-mcp-grafana.md) | Grafana Cloud no Hermes por MCP, com token só no perfil (spec 009). |
 | [agente-observabilidade.md](agente-observabilidade.md) | Papel `[obs]`: serviços, métricas e feedback (spec 009). |
-| [agente-avatar.md](agente-avatar.md) | Papel `[avatar]`: contrato do agente de comunicação via avatar (spec 009). |
+| [agente-avatar.md](agente-avatar.md) | Papel `[avatar]`: o mascote coach como agente de comunicação via avatar (specs 009 e 013). |

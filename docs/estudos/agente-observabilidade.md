@@ -15,6 +15,7 @@ o token existir, ao Grafana Cloud (`https://estevaomaia.grafana.net`).
 | Avaliação online | `GET /v1/ask/{ask_id}/evaluation`, experimento `rag-cognus-online` | Juízes e métricas por pergunta real |
 | Avaliação em lote | experimento `rag-cognus` (`rag-cognus evaluate`) | Comparar versões do RAG com o mesmo dataset |
 | Feedback humano | `user_feedback` nos traces (`POST /v1/feedback`) | O que a pessoa achou, não só o juiz |
+| Mascote coach | traces `flow=mascot`, tag `mascot_source` | Taxa de explicações por regras (LLM fora ou guarda rejeitando) |
 | Grafana | MCP `grafana` (só leitura) | Dashboards, métricas e alertas consolidados |
 
 Por que juiz **e** feedback humano: o juiz LLM é barato e roda em toda resposta, mas erra de
@@ -28,6 +29,9 @@ para achar onde o juiz diverge das pessoas.
   publica métricas lá; publicar (Prometheus remote write, OTLP ou Grafana Alloy) é uma spec
   futura de devops, com dependência justificada. Por enquanto o agente só **lê**.
 
+O papel (fontes, restrições e o formato do relatório `SEVERIDADE … CORRECAO_ESTRUTURAL`) já
+está em `hermes/agents/diagnoser-agent.md`.
+
 ## 4. Contrato proposto
 Entrada: janela (`since`, `until`), experimentos e URL da API.
 Saída: `services`, `quality`, `feedback`, `alerts`, `published` (detalhes na skill).
@@ -39,7 +43,7 @@ Regras e porquês:
 - **Achados objetivos** em `alerts` (números antes/depois), não opinião do modelo.
 
 ## 5. Quando o código chegar
-1. Spec `specs/014-agente-observabilidade.md` (número sugerido).
+1. Spec `specs/015-agente-observabilidade.md` (número sugerido; 013/014 são do mascote).
 2. Testes em `tests/test_observability.py` com `MlflowClient` e HTTP falsos (o padrão de
    `http_get` falso está em `tests/test_hermes_services.py`).
 3. Código em `src/rag_cognus/agents/observability.py`.

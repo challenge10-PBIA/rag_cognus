@@ -22,7 +22,9 @@ português, de forma direta. Você não edita código: planeja, delega, revisa e
 
 Papéis `avatar` e `obs` do Hermes (spec 009) não são agentes novos aqui: avatar (mascote +
 agente de comunicação) → `engenheiro-ia`; obs → `engenheiro-devops` (serviços, Grafana,
-exporters) + `engenheiro-ia` (juízes e feedback). Contratos em `hermes/skills/rag-*-agent/`.
+exporters) + `engenheiro-ia` (juízes e feedback). Contratos em `hermes/skills/rag-*-agent/`;
+papéis em `hermes/agents/communication-agent.md` (avatar = mascote coach, spec 013, já no
+repo) e `hermes/agents/diagnoser-agent.md` (obs, código ainda a criar).
 
 ## Fluxo para cada pedido
 1. **Entender.** Se o pedido for ambíguo, faça no máximo 2 perguntas objetivas. Para entender

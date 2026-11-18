@@ -3,9 +3,10 @@
 Guia de estudo do papel `[avatar]` (skill `hermes/skills/rag-avatar-agent/SKILL.md`).
 
 ## 1. Situação
-O agente já existe fora deste repositório e vai ser integrado depois. Este repo já tem as
-peças em que ele vai encaixar; a skill descreve o contrato para a integração não começar do
-zero e para o modelo local não inventar código.
+O agente entrou no repo como o **mascote coach** (spec `specs/013-mascote-coach-dicas.md`,
+código em `src/rag_cognus/coach.py`, papel em `hermes/agents/communication-agent.md`) e conduz
+o onboarding (spec 014). As seções 3 e 4 abaixo eram a proposta inicial; o que foi
+implementado está na seção 5.
 
 ## 2. Peças que já existem
 - **Mascote** (`src/rag_cognus/mascot.py`, spec 008): paleta fechada (pele, cabelo/gorro,
@@ -40,3 +41,15 @@ Por que assim:
 
 No Hermes: `goal: "[avatar] integrar o agente de avatar"`, com "carregue a skill
 rag-avatar-agent" no `context`. No Claude Code: `engenheiro-ia`.
+
+## 5. O que foi implementado (spec 013)
+Diferenças em relação à proposta, e por quê:
+- **Texto, não falas com `pause_ms`**: sem voz (TTS) nesta entrega; o balão mostra até 3
+  frases. `utterances` volta quando houver voz.
+- **`mood` em vez de `emotion`**: o mesmo conjunto fechado de expressões que o front já anima
+  (`feliz`, `neutro`, `pensativo`, spec 008).
+- **Fatos em vez de `source_claims`**: o mascote explica métricas do próprio usuário; os
+  números vêm de `coach.facts()` (SQLite), e a guarda `grounded()` troca por regras qualquer
+  texto com número que não esteja nos fatos. Dicas por tela são só regras, sem LLM.
+- **`trace_id`** continua: cada explicação é um trace `flow=mascot` (contrato da spec 011),
+  com a tag `mascot_source` que o agente de observabilidade acompanha.
