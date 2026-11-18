@@ -199,8 +199,8 @@ def test_meta_and_profile(client):  # AC-10
     assert client.get("/v1/profile").json()["daily_goal_minutes"] == 15
 
 
-def test_api_cors_allows_local_frontend_on_8001():
-    app = create_app(Services(Settings()))
+def test_api_cors_allows_local_frontend_on_8001(tmp_path):
+    app = create_app(Services(Settings(), data_dir=tmp_path / "app"))
     origins = next(
         middleware.kwargs["allow_origins"]
         for middleware in app.user_middleware

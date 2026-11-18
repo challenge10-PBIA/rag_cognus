@@ -134,10 +134,17 @@ class Services:
     """Dependências da API. Os testes trocam modelos e dados por fakes via subclasse."""
 
     def __init__(
-        self, settings: Settings, data_dir: Path | None = None, snapshot: Path | None = None
+        self,
+        settings: Settings,
+        data_dir: Path | None = None,
+        snapshot: Path | None = None,
+        phonetics_snapshot: Path | None = None,
     ):
         self.settings = settings
         self.snapshot = Path(snapshot or ROOT / ".cache/gold.jsonl")
+        self.phonetics_snapshot = Path(
+            phonetics_snapshot or self.snapshot.parent / "phonetics.jsonl"
+        )
         self.store = Store(data_dir or ROOT / ".cache/app")
         self._lock = threading.Lock()
         self._retriever = None
@@ -154,8 +161,32 @@ class Services:
                 from rag_cognus.gold import load_snapshot
                 from rag_cognus.retrieval import GoldRetriever
 
-                self._retriever = GoldRetriever(load_snapshot(self.snapshot), self.settings)
+                documents = load_snapshot(self.snapshot)
+                if self.phonetics_snapshot.exists():
+                    documents += self.phonetic_documents()
+                ids = [doc.id for doc in documents]
+                if len(ids) != len(set(ids)):
+                    raise GoldUnavailable("IDs duplicados entre as bases Gold e fonética.")
+                self._retriever = GoldRetriever(documents, self.settings)
             return self._retriever
+
+    def phonetic_documents(self):
+        from rag_cognus.gold import load_snapshot
+        from rag_cognus.phonetics import catalog_from_documents
+
+        try:
+            documents = load_snapshot(self.phonetics_snapshot)
+            catalog_from_documents(documents)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise GoldUnavailable(
+                "Catálogo fonético indisponível ou inválido: sincronize a Gold de exercícios."
+            ) from exc
+        return documents
+
+    def phonetic_catalog(self):
+        from rag_cognus.phonetics import catalog_from_documents
+
+        return catalog_from_documents(self.phonetic_documents())
 
     def transcriber(self):
         with self._lock:
@@ -520,6 +551,21 @@ def create_app(services: Services | None = None) -> FastAPI:
         except GoldUnavailable as exc:
             raise HTTPException(503, str(exc)) from exc
 
+    @app.get("/v1/phonetics/exercises", response_model=s.PhoneticCatalog)
+    def phonetic_exercises():
+        try:
+            return services.phonetic_catalog()
+        except GoldUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.get("/v1/phonetics/exercises/{exercise_id}", response_model=s.PhoneticExercise)
+    def phonetic_exercise(exercise_id: str):
+        catalog = phonetic_exercises()
+        for item in catalog.exercises:
+            if item.id == exercise_id:
+                return item
+        raise HTTPException(404, "Exercício fonético não encontrado no catálogo.")
+
     @app.get("/v1/health", response_model=s.Health)
     def health():
         try:
@@ -577,9 +623,16 @@ def create_app(services: Services | None = None) -> FastAPI:
         challenge_id: str | None = Form(None),
         anxiety_before: int | None = Form(None, ge=1, le=5),
         anxiety_after: int | None = Form(None, ge=1, le=5),
+        exercise_id: str | None = Form(None, max_length=120),
     ):
         if mode not in MODES:
             raise HTTPException(422, f"Modo desconhecido: {mode}.")
+        selected = None
+        if exercise_id is not None:
+            catalog = phonetic_exercises()
+            selected = next((item for item in catalog.exercises if item.id == exercise_id), None)
+            if selected is None:
+                raise HTTPException(422, "Exercício fonético desconhecido no catálogo.")
         wav = audio.file.read()
         try:
             result = analyze_session(
@@ -587,6 +640,8 @@ def create_app(services: Services | None = None) -> FastAPI:
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        result["exercise_id"] = selected.id if selected else None
+        result["phoneme_id"] = selected.phonemeId if selected else None
         store.save_session(result, _record(result), wav)
         return result
 
@@ -666,6 +721,8 @@ def create_app(services: Services | None = None) -> FastAPI:
                 known = {e["id"] for e in services.exercise_catalog()}
             except Exception as exc:
                 raise HTTPException(503, "Catálogo de exercícios indisponível.") from exc
+            if body.exercise_id not in known and services.phonetics_snapshot.exists():
+                known.update(item.id for item in phonetic_exercises().exercises)
             if body.exercise_id not in known:
                 raise HTTPException(422, f"Exercício desconhecido: {body.exercise_id}.")
         return store.add_habit(_now(), body.text, body.session_id, body.exercise_id)

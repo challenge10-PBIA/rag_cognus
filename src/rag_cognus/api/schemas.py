@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from rag_cognus.agents.schemas import AudienceProfile
 from rag_cognus.coach import TOPICS as COACH_TOPICS
 from rag_cognus.mascot import IDS as MASCOT_IDS
+from rag_cognus.phonetics import PhoneticCatalog as PhoneticCatalog
+from rag_cognus.phonetics import PhoneticExercise as PhoneticExercise
 
 
 # ---------- entrada ----------
@@ -303,6 +305,8 @@ class Adapted(BaseModel):
 
 
 class SessionResult(BaseModel):
+    exercise_id: str | None = None
+    phoneme_id: str | None = None
     session_id: str
     created_at: str
     mode: str

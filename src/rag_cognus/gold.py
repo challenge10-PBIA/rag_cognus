@@ -6,6 +6,7 @@ import os
 import time
 from collections.abc import Iterable
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -146,3 +147,16 @@ def load_snapshot(path: str | Path) -> list[Document]:
     if len(docs) != manifest["chunk_count"]:
         raise ValueError("Contagem diferente do manifesto.")
     return docs
+
+
+PHONETICS_VIEW = "cognus.gold.vw_rag_exercicios"
+
+
+def load_exercises_from_databricks(settings: Settings, timeout: int = 300) -> list[Document]:
+    """Lê o catálogo publicado sem substituir a view de conhecimento geral."""
+    documents = load_from_databricks(replace(settings, gold_view=PHONETICS_VIEW), timeout)
+    if any(d.metadata.get("document_type") != "phonetic_exercise" for d in documents):
+        raise ValueError("View de exercícios contém tipo documental incompatível.")
+    if any(not isinstance(d.metadata.get("exercise"), dict) for d in documents):
+        raise ValueError("View de exercícios sem catálogo estruturado.")
+    return documents
