@@ -1,3 +1,4 @@
+import os
 import sys
 
 import pytest
@@ -164,10 +165,42 @@ def test_serve_api_does_not_disable_tracing_when_mlflow_down(monkeypatch, capsys
     started = []
     monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
     monkeypatch.setattr(evaluation, "configure_tracking", down)
+    monkeypatch.setattr("rag_cognus.cli.mlflow_available", lambda uri: True)
     monkeypatch.setattr(mlflow.tracing, "disable", lambda: disabled.append(True))
     monkeypatch.setattr(api_app, "Services", lambda settings: object())
     monkeypatch.setattr(api_app, "create_app", lambda services: "app")
     monkeypatch.setattr(uvicorn, "run", lambda app, host, port: started.append(app))
     serve_api("127.0.0.1", 8001)
     assert disabled == [] and started == ["app"]
+    assert "tenta de novo" in capsys.readouterr().out
+
+
+def test_serve_api_starts_immediately_when_mlflow_down(monkeypatch, capsys):  # AC-D5
+    import mlflow
+    import uvicorn
+
+    import rag_cognus.api.app as api_app
+    import rag_cognus.evaluation as evaluation
+    from rag_cognus.cli import serve_api
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("não deve chamar set_experiment com o MLflow fora do ar")
+
+    uris = []
+    started = []
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("MLFLOW_HTTP_REQUEST_MAX_RETRIES", raising=False)
+    monkeypatch.delenv("MLFLOW_HTTP_REQUEST_TIMEOUT", raising=False)
+    monkeypatch.setattr("rag_cognus.cli.mlflow_available", lambda uri: False)
+    monkeypatch.setattr(evaluation, "configure_tracking", forbidden)
+    monkeypatch.setattr(mlflow, "set_experiment", forbidden)
+    monkeypatch.setattr(mlflow, "set_tracking_uri", lambda uri: uris.append(uri))
+    monkeypatch.setattr(api_app, "Services", lambda settings: object())
+    monkeypatch.setattr(api_app, "create_app", lambda services: "app")
+    monkeypatch.setattr(uvicorn, "run", lambda app, host, port: started.append(app))
+    serve_api("127.0.0.1", 8001)
+    assert started == ["app"]
+    assert uris == ["http://127.0.0.1:5001"]
+    assert os.environ["MLFLOW_HTTP_REQUEST_MAX_RETRIES"] == "2"
+    assert os.environ["MLFLOW_HTTP_REQUEST_TIMEOUT"] == "10"
     assert "tenta de novo" in capsys.readouterr().out

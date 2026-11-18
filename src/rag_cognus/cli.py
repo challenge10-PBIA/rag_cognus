@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -128,14 +129,27 @@ def serve_api(host: str, port: int):
     from rag_cognus.api.app import Services, create_app
     from rag_cognus.evaluation import configure_tracking
 
+    # Se o MLflow cair com a API no ar, um pedido não deve ficar minutos em retry/backoff.
+    os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "2")
+    os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "10")
     settings = Settings.from_env()
-    try:
-        configure_tracking(settings)
-    except Exception as exc:  # sem MLflow a API funciona; o tracing não é desligado
-        print(
-            f"Aviso: MLflow indisponível ({exc}); a avaliação online tenta de novo a cada "
-            f"pedido (checagem em cache por {MLFLOW_HEALTH_TTL:.0f} s). {MLFLOW_HINT}"
-        )
+    warning = (
+        "Aviso: MLflow indisponível ({}); a avaliação online tenta de novo a cada "
+        f"pedido (checagem em cache por {MLFLOW_HEALTH_TTL:.0f} s). {MLFLOW_HINT}"
+    )
+    if not mlflow_available(settings.tracking_uri):
+        # set_experiment faria retries HTTP por minutos; a API sobe sem esperar (AC-D5).
+        import mlflow
+
+        from rag_cognus.config import ensure_local_tracking
+
+        mlflow.set_tracking_uri(ensure_local_tracking(settings.tracking_uri))
+        print(warning.format(f"{settings.tracking_uri} não responde"))
+    else:
+        try:
+            configure_tracking(settings)
+        except Exception as exc:  # sem MLflow a API funciona; o tracing não é desligado
+            print(warning.format(exc))
     print(f"Cognus API em http://{host}:{port}  (documentação: /docs)")
     uvicorn.run(create_app(Services(settings)), host=host, port=port)
 
