@@ -123,6 +123,30 @@ def mlflow_available(
     return ok
 
 
+def mlflow_local_env(environ=None) -> tuple[dict[str, str], str]:
+    """Ambiente do `mlflow server` com o Ollama como LLM dos juízes (spec 012).
+
+    Só preenche o que falta em `environ` (quem já configurou manda). Devolve o ambiente e uma
+    linha para o terminal com o juiz e a base efetivos, nunca o valor de uma chave.
+    """
+    from rag_cognus.evaluation import ui_judge_env
+
+    environ = dict(os.environ if environ is None else environ)
+    notice = ""
+    try:
+        settings = Settings.from_env()
+    except ValueError as exc:  # .env inválido não impede o MLflow de subir
+        settings = Settings()
+        notice = f"Aviso: .env inválido ({exc}); juízes com os padrões do Settings.\n"
+    extra = ui_judge_env(settings)
+    if environ.get("OPENAI_BASE_URL"):  # mesma base com o nome novo do SDK da OpenAI
+        extra.pop("OPENAI_API_BASE")
+    env = {**extra, **{k: v for k, v in environ.items() if v or k not in extra}}
+    base = env.get("OPENAI_API_BASE") or env.get("OPENAI_BASE_URL", "")
+    judge = env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"]
+    return env, f"{notice}Juízes da UI: {judge} (base {base})"
+
+
 def serve_api(host: str, port: int):
     import uvicorn
 
@@ -206,7 +230,9 @@ def main():
             )
         folder = Path(args.data_dir).resolve()
         folder.mkdir(parents=True, exist_ok=True)
+        env, judge_line = mlflow_local_env()
         print(f"MLflow open source em http://127.0.0.1:{args.port}")
+        print(judge_line)
         command = [
             sys.executable,
             "-m",
@@ -222,7 +248,7 @@ def main():
             "--artifacts-destination",
             str(folder / "artifacts"),
         ]
-        raise SystemExit(subprocess.call(command))
+        raise SystemExit(subprocess.call(command, env=env))
 
     if args.command == "api":
         serve_api(args.host, args.port)

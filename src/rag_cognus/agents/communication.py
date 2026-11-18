@@ -15,9 +15,10 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from rag_cognus.agents.schemas import AUDIENCES, CONTEXTS, AdaptationDraft, AudienceProfile
 from rag_cognus.config import Settings
-from rag_cognus.llm import make_ollama
+from rag_cognus.llm import llm_attributes, make_ollama, tag_llm_span, trace_tags
 
 WORDS_PER_MINUTE = 150  # ritmo médio de fala em apresentações em português
+ADAPT_NUM_PREDICT = 1500
 
 SYSTEM = """Você é um coach de comunicação que adapta textos para apresentações orais em
 português. Reescreva o TEXTO para o PÚBLICO e o CONTEXTO indicados.
@@ -77,7 +78,11 @@ def text_metrics(text: str, target_minutes: float | None = None) -> dict:
 
 class CommunicationAgent:
     def __init__(self, settings: Settings, chat=None):
-        chat = chat or make_ollama(settings, AdaptationDraft, num_predict=1500)
+        self.settings = settings
+        self._llm = llm_attributes(settings, "generator", num_predict=ADAPT_NUM_PREDICT)
+        chat = chat or make_ollama(
+            settings, AdaptationDraft, role="generator", num_predict=ADAPT_NUM_PREDICT
+        )
         self.chain = (
             ChatPromptTemplate.from_messages([("system", SYSTEM), ("human", HUMAN)])
             | chat
@@ -86,6 +91,7 @@ class CommunicationAgent:
 
     @mlflow.trace(name="adapt_text", span_type="LLM")
     def adapt(self, text: str, profile: AudienceProfile) -> dict:
+        tag_llm_span(self._llm)
         raw = self.chain.invoke(
             {
                 "audience": profile.audience,
@@ -100,11 +106,35 @@ class CommunicationAgent:
         )
         return AdaptationDraft.model_validate(raw).model_dump()
 
-    @mlflow.trace(name="communication_agent", span_type="AGENT")
     def run(
         self, text: str, profile: AudienceProfile, source_claims: list[str] | None = None
     ) -> dict:
-        mlflow.update_current_trace(tags={"agent": "communication", "audience": profile.audience})
+        """Devolve o dict completo; o span raiz recebe só o que os juízes leem (spec 011)."""
+        with mlflow.start_span(name="communication_agent", span_type="AGENT") as span:
+            span.set_inputs(
+                {
+                    "text": text,
+                    "profile": profile.model_dump(),
+                    "source_claims": source_claims or [],
+                }
+            )
+            tags = trace_tags(self.settings, "communication")
+            tags |= {"agent": "communication", "audience": profile.audience}
+            mlflow.update_current_trace(tags=tags, request_preview=text)
+            result = self._run(text, profile, source_claims)
+            adapted = result["adapted"]
+            span.set_outputs(
+                {
+                    "response": adapted["adapted_text"],
+                    "changes": adapted["changes"],
+                    "rehearsal_tips": adapted["rehearsal_tips"],
+                    "metrics": result["metrics"],
+                }
+            )
+            mlflow.update_current_trace(response_preview=adapted["adapted_text"])
+        return result
+
+    def _run(self, text: str, profile: AudienceProfile, source_claims: list[str] | None) -> dict:
         if not text.strip():
             raise ValueError("Texto vazio: escreva ou grave o que você quer apresentar.")
         adapted = self.adapt(text, profile)

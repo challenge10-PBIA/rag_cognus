@@ -75,7 +75,7 @@ TEXTO ADAPTADO: {adapted}"""
 
 
 def _judge(settings: Settings, schema, system: str, human: str, chat=None):
-    chat = chat or make_ollama(settings, schema, model=settings.judge, num_predict=600)
+    chat = chat or make_ollama(settings, schema, role="judge", num_predict=600)
     prompt = ChatPromptTemplate.from_messages([("system", system), ("human", human)])
     return prompt | chat | JsonOutputParser()
 

@@ -12,8 +12,10 @@ import mlflow
 from mlflow.entities import AssessmentSource, Feedback
 from mlflow.genai.scorers import scorer
 
+from rag_cognus.chain import RAG_NUM_PREDICT
 from rag_cognus.config import Settings, ensure_local_tracking
-from rag_cognus.judges import METRICS, as_dict, judge_response
+from rag_cognus.judges import JUDGE_NUM_PREDICT, METRICS, as_dict, judge_response
+from rag_cognus.llm import ollama_options
 from rag_cognus.metrics import score_case
 
 EVAL_TAG = "rag_cognus_eval"
@@ -37,9 +39,54 @@ def load_cases(path: str | Path) -> list[dict]:
     return cases
 
 
+HUMAN_VERIFIED = "human_verified"
+# Gabarito que só vale depois da revisão humana (rascunho não é gabarito).
+REVIEWED_ONLY = {"relevant_chunk_ids", "should_abstain"}
+# Opções do LLM registradas como params do run (spec 010 AC-7).
+OPTION_PARAMS = ("model", "temperature", "think", "seed", "top_p", "top_k")
+OPTION_PARAMS += ("repeat_penalty", "presence_penalty", "num_predict", "num_ctx")
+
+
 def _expectations(case: dict) -> dict:
-    # MLflow não aceita expectativas com valor None.
-    return {k: v for k, v in case.get("expectations", {}).items() if v is not None}
+    """Só expectativas não vazias e revisadas (spec 011 AC-5); `label_status` vira tag."""
+    expected = case.get("expectations", {})
+    reviewed = expected.get("label_status") == HUMAN_VERIFIED
+    return {
+        k: v
+        for k, v in expected.items()
+        if k != "label_status"
+        and v not in (None, [], "", {})
+        and (reviewed or k not in REVIEWED_ONLY)
+    }
+
+
+def _case_tags(case: dict, mode: str) -> dict:
+    tags = {"case_id": case["case_id"]}
+    if label := case.get("expectations", {}).get("label_status"):
+        tags["label_status"] = str(label)
+    if mode == "retrieval":  # no modo RAG o RagPipeline já marca flow=rag
+        tags["flow"] = "retrieval"
+    return tags
+
+
+def _options_param(settings: Settings, role: str, num_predict: int) -> str:
+    options = ollama_options(settings, role, num_predict=num_predict)
+    return json.dumps({k: options.get(k) for k in OPTION_PARAMS})
+
+
+def ui_judge_model_uri(settings: Settings) -> str:
+    """URI dos juízes da UI do MLflow: provedor OpenAI apontado para o /v1 do Ollama."""
+    return "openai:/" + settings.judge
+
+
+def ui_judge_env(settings: Settings) -> dict[str, str]:
+    """Ambiente do `mlflow server` para os juízes da UI usarem o Ollama local (spec 011/012)."""
+    base = settings.ollama_url.rstrip("/").removesuffix("/v1").rstrip("/")
+    return {
+        "OPENAI_API_BASE": f"{base}/v1",
+        "OPENAI_API_KEY": "ollama",  # o Ollama ignora, mas o provedor exige
+        "MLFLOW_GENAI_JUDGE_DEFAULT_MODEL": ui_judge_model_uri(settings),
+    }
 
 
 def _build_scorers(settings: Settings, judge, generate: bool):
@@ -54,7 +101,8 @@ def _build_scorers(settings: Settings, judge, generate: bool):
     def retrieval_and_citations(outputs, expectations):
         if outputs.get("error"):
             return Feedback(name="citation_integrity", value=0.0, rationale=outputs["error"])
-        case = {"expectations": expectations or {}}
+        # O dataset só traz referências revisadas (ver _expectations).
+        case = {"expectations": (expectations or {}) | {"label_status": HUMAN_VERIFIED}}
         values = score_case(case, outputs, settings.top_k)
         return [Feedback(name=k, value=float(v)) for k, v in values.items()] or Feedback(
             name="retrieved_chunks", value=float(len(outputs.get("retrieved_chunk_ids", [])))
@@ -108,8 +156,9 @@ def evaluate(
         ):
             raise ValueError("Referências humanas ausentes deste snapshot Gold; revisar dataset.")
 
-    @mlflow.trace(name="rag_cognus_case", span_type="CHAIN")
-    def predict(query: str, case_id: str = "", niche: str | None = None) -> dict:
+    # Sem @mlflow.trace: o span raiz é o do RagPipeline (ou o retrieve_gold), com inputs
+    # {query, niche}; o case_id vai como tag pelo dataset (spec 011 AC-4).
+    def predict(query: str, niche: str | None = None) -> dict:
         start = time.perf_counter()
         try:
             if pipeline:
@@ -125,13 +174,15 @@ def evaluate(
                 }
         except Exception as exc:  # erro vira métrica, não interrompe a avaliação
             output = {"error": f"{type(exc).__name__}: {exc}"}
+            if mlflow.get_current_active_span() is not None:  # span criado pelo harness
+                mlflow.update_current_trace(state="ERROR", tags={"error": "true"})
         output["latency_seconds"] = time.perf_counter() - start
         return output
 
     mode = "rag" if pipeline else "retrieval"
     judged = bool(pipeline and judge)
     data = [
-        {"inputs": {**c["inputs"], "case_id": c["case_id"]}, "expectations": _expectations(c)}
+        {"inputs": c["inputs"], "expectations": _expectations(c), "tags": _case_tags(c, mode)}
         for c in cases
     ]
     # Ollama local atende uma requisição por vez; paralelismo só distorce a latência.
@@ -151,6 +202,15 @@ def evaluate(
                 "gold_chunk_count": len(known),
                 "gold_fingerprint": hashlib.sha256(payload.encode()).hexdigest()[:16],
                 "cases": len(cases),
+                "generator_options": (
+                    _options_param(settings, "generator", RAG_NUM_PREDICT)
+                    if pipeline
+                    else "not_used"
+                ),
+                "judge_options": (
+                    _options_param(settings, "judge", JUDGE_NUM_PREDICT) if judged else "not_used"
+                ),
+                "judge_is_generator": str(settings.judge == settings.chat_model).lower(),
             }
         )
         mlflow.log_metric("index_build_seconds", retriever.build_seconds)
@@ -179,7 +239,8 @@ def _per_case_rows(df, skip: set[str]) -> dict:
     table.update({n: [] for n in names})
     for _, row in df.iterrows():
         request, response = _as_dict(row.get("request")), _as_dict(row.get("response"))
-        table["case_id"].append(request.get("case_id", ""))
+        tags = _as_dict(row.get("tags"))
+        table["case_id"].append(tags.get("case_id") or request.get("case_id", ""))
         table["query"].append(request.get("query", ""))
         table["response"].append(response.get("response") or response.get("error") or "")
         for n in names:

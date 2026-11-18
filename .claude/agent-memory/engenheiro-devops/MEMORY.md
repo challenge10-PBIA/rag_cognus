@@ -1,1 +1,2 @@
-- [Guard quirks](project_guard_quirks.md) — guard bloqueia edição do .env.example e Bash com databricks:// / cat .env
+- [Guard quirks](project_guard_quirks.md) — guard bloqueia .env.example, databricks://, cat .env, $…TOKEN e tokens glsa_/glc_
+- [Hermes/MLflow internals](reference_hermes_mlflow_internals.md) — onde ver chaves do Hermes; juízes UI do MLflow 3.18 usam gateway:/

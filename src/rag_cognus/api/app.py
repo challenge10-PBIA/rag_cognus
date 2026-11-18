@@ -110,7 +110,7 @@ def make_pleonasm_checker(settings: Settings, chat=None):
     from rag_cognus.llm import make_ollama
 
     if chat is None:
-        chat = make_ollama(settings, PleonasmCheck, model=settings.fast, num_predict=300)
+        chat = make_ollama(settings, PleonasmCheck, role="fast", num_predict=300)
     prompt = ChatPromptTemplate.from_messages(
         [("system", PLEONASM_SYSTEM), ("human", "FALA: {text}\n\nCANDIDATOS: {candidates}")]
     )

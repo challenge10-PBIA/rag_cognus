@@ -27,7 +27,15 @@ DANGEROUS = [
     ),
     (r"databricks://", "tracking no Databricks é proibido neste projeto"),
     (r"\bcat\s+\.env\b|\bprintenv\b.*TOKEN", "não exponha segredos do .env"),
+    (
+        r"\$\{?\w*(TOKEN|SECRET|PASSWORD|API_KEY)\b",
+        "não exponha tokens/segredos: o valor fica só no .env da raiz do repo",
+    ),
 ]
+# Tokens do Grafana Cloud: service account (glsa_) e Cloud Access Policy (glc_).
+# Exige corpo longo para não barrar textos que só citam o prefixo.
+TOKEN_LITERAL = re.compile(r"\bgl(?:sa|c)_[A-Za-z0-9+/=_\-]{16,}")
+TOKEN_REASON = "token do Grafana em texto puro; guarde-o só no .env da raiz do repo"
 PROTECTED = (".env", "uv.lock", "mlruns/", "mlartifacts/", ".git/")
 # Nomes do Hermes e do Claude Code (o mesmo script atende os dois).
 SHELL_TOOLS = {"terminal", "Bash"}
@@ -64,6 +72,9 @@ def main() -> None:
 
     if tool in SHELL_TOOLS:
         cmd = str(tool_input.get("command") or tool_input.get("cmd") or "")
+        if TOKEN_LITERAL.search(cmd):
+            # Não ecoa o comando: ele carrega o token.
+            return _block(TOKEN_REASON, p)
         for pattern, reason in DANGEROUS:
             if re.search(pattern, cmd):
                 return _block(f"{reason}: `{cmd[:120]}`", p)
@@ -73,6 +84,10 @@ def main() -> None:
         path = rel(tool_path(tool_input)) or ""
         if any(path == item.rstrip("/") or path.startswith(item) for item in PROTECTED):
             return _block(f"arquivo protegido: {path}", p)
+        if isinstance(tool_input, dict) and any(
+            isinstance(v, str) and TOKEN_LITERAL.search(v) for v in tool_input.values()
+        ):
+            return _block(f"{TOKEN_REASON} ({path})", p)
         if os.environ.get("HERMES_TDD_STRICT") == "1":
             parts = Path(path).parts
             if parts[:2] == ("src", "rag_cognus") and path.endswith(".py"):
