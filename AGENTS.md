@@ -17,6 +17,12 @@ MLflow **local** (`http://127.0.0.1:5001`; URIs `databricks://` são proibidas).
 | `evaluation.py` | Avaliação em lote → MLflow | `tests/test_evaluation.py` |
 | `chat_app.py` | UI Streamlit | `tests/test_chat_app.py` |
 | `speech.py` | Áudio → texto (faster-whisper) | `tests/test_speech.py` |
+| `llm.py` | Fábrica única do ChatOllama (num_ctx/keep_alive do `.env`) | `tests/test_config.py` |
+| `agents/` | Agentes de evidências e de comunicação, pipeline e juízes (spec 001) | `tests/test_agents.py` |
+| `agents_ui.py` | Aba 🧠 Agentes do Streamlit | `tests/test_chat_app.py` |
+| `api/` | API FastAPI do front (`rag-cognus api`), SQLite local (spec 002) | `tests/test_api.py` |
+| `speech_analysis.py` | Ritmo, pausas, vícios, clareza, dicção da sessão | `tests/test_speech_analysis.py` |
+| `progress.py` | Streak, períodos, nível, conquistas, desafios | `tests/test_progress.py` |
 | `cli.py` | Comando `rag-cognus` | — |
 
 ## Comandos
@@ -37,10 +43,23 @@ MLflow **local** (`http://127.0.0.1:5001`; URIs `databricks://` são proibidas).
 - Edite o mínimo; leia o arquivo antes de alterar; use `patch` em vez de reescrever.
 - Testes não acessam rede: use fakes/monkeypatch (veja `tests/conftest.py`).
 - Linha ≤ 100 colunas, `ruff format`. Textos de UI e mensagens em português.
-- Não toque em `.env`, `uv.lock`, `mlruns/`, `data/` sem pedido explícito.
+- Não toque em `.env`, `uv.lock`, `mlruns/` sem pedido explícito; `data/` só o
+  engenheiro de dados.
 - Não faça `git push`, `git reset --hard` nem commits sem pedido.
 
-## Multiagentes
-Para tarefas com mais de um módulo, carregue a skill `rag-orchestrator` e delegue com
-`delegate_task`. Cada subagente recebe: objetivo, arquivos exatos, AC da spec e o comando
-de verificação. Subagentes devolvem resumo curto + caminhos alterados + saída do harness.
+## Time multiagente
+Um **líder técnico** conversa com o usuário, escreve o plano e delega; três engenheiros
+executam no seu domínio e devolvem relatório no formato combinado.
+
+| Papel | Domínio |
+|---|---|
+| Líder técnico | Pedido → spec → plano → delegação → harness final → relatório ao usuário |
+| Engenheiro de dados | `gold.py`, Databricks em `config.py`, `data/`, `notebooks/`, schema dos documentos |
+| Engenheiro de IA | `retrieval.py`, `chain.py`, `judges.py`, `metrics.py`, `evaluation.py`, `speech.py`, lógica do `chat_app.py` |
+| Engenheiro DevOps | `.github/`, `pyproject.toml`, `uv.lock`, `cli.py`, MLflow/Streamlit local, `hermes/`, `.claude/` |
+
+- **Claude Code:** `.claude/agents/` (o líder é o agente principal da sessão).
+- **Hermes:** skill `rag-orchestrator` com `delegate_task`.
+
+Cada engenheiro recebe: objetivo, arquivos exatos, AC da spec, restrições e o comando de
+verificação. Paralelo só quando os arquivos não se sobrepõem.

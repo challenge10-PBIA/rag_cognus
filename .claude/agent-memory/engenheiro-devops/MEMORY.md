@@ -1,0 +1,1 @@
+- [Guard quirks](project_guard_quirks.md) — guard bloqueia edição do .env.example e Bash com databricks:// / cat .env

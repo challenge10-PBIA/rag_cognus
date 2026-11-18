@@ -80,6 +80,75 @@ defina `OLLAMA_JUDGE_MODEL` no `.env`.
   avaliações e mapa de calor das notas por pergunta.
 - A barra lateral mostra se Ollama e MLflow estão no ar.
 
+## API do front web
+
+O app web (repo [`frontend_UI`](https://github.com/challenge10-PBIA/frontend_UI)) usa a API
+local deste repositório. Ela analisa sessões de fala gravadas, guarda o progresso em SQLite
+(`.cache/app/`) e expõe RAG e agentes. Especificação em
+[specs/002-api-sessoes-progresso.md](specs/002-api-sessoes-progresso.md); plano de produto em
+[docs/plano-frontend.md](docs/plano-frontend.md).
+
+```bash
+python -m pip install -e '.[api,audio]'
+rag-cognus api                    # http://127.0.0.1:8001 · OpenAPI em /docs
+```
+
+| Pilar da sessão | Medida | Nota 100 quando |
+|---|---|---|
+| Ritmo & Cadência | palavras/min (sem vícios), timestamps do Whisper | 120–160 ppm |
+| Pausas Conscientes | intervalos de 0,4–2 s; silêncios > 3 s penalizam | 3–8 pausas/min |
+| Vícios Vocais | éé/eh, hã, hum, "tipo", "né" | nenhum vício |
+| Clareza da Mensagem | legibilidade (Flesch PT) da transcrição | texto fácil de seguir |
+
+O índice da sessão é a média dos quatro pilares; números nunca vêm do LLM. Ansiedade é
+autoavaliação do usuário (1–5), não medida. O Whisper tende a apagar hesitações: a
+transcrição usa um prompt com vícios para registrá-las, mas valide com gravações reais.
+
+### Avaliação online
+
+Cada `POST /v1/ask` responde assim que o RAG termina; o juiz avalia a resposta em segundo
+plano no Ollama local e o resultado sai em `GET /v1/ask/{ask_id}/evaluation`
+([specs/004-avaliacao-rag-local.md](specs/004-avaliacao-rag-local.md)).
+
+```bash
+rag-cognus mlflow-local   # terminal 1: MLflow em http://127.0.0.1:5001
+rag-cognus mlflow-check   # confere o servidor e cria o experimento online se faltar
+rag-cognus api            # terminal 2
+```
+
+- No MLflow, abra o experimento `rag-cognus-online` (`MLFLOW_ONLINE_EXPERIMENT`): um run
+  `ask-<id>` por pergunta, com as notas do juiz, `quality_score` e `latency_seconds`.
+- Custo: o juiz ocupa o Ollama por dezenas de segundos depois de cada resposta, e a
+  próxima pergunta espera na fila. Juiz diferente do chat (`OLLAMA_JUDGE_MODEL`, menos viés
+  de autoavaliação) recarrega o modelo e soma latência.
+- `RAG_ONLINE_EVAL=false` desliga a avaliação. Sem MLflow no ar a API segue funcionando; a
+  avaliação só não é registrada (`mlflow_logged=false`).
+
+## Agentes especializados
+
+Dois agentes locais (Qwen no Ollama) apoiam o treino de apresentação. Cada execução vira um
+trace `AGENT` no MLflow (tag `agent=evidence|communication|pipeline`); com **Avaliar
+respostas** ligado, as notas do juiz entram no trace. Especificação em
+[specs/001-agentes-especializados.md](specs/001-agentes-especializados.md).
+
+| Agente | Entrada | Saída |
+|---|---|---|
+| **Evidências** | Tema (pode ser composto) | Subperguntas, afirmações com `chunk_id`, conflitos, lacunas e confiança |
+| **Comunicação** | Texto digitado, fala gravada ou síntese + público, contexto, minutos e tom | Texto adaptado, mudanças, dicas de ensaio, tempo estimado e legibilidade |
+
+No app, use a aba **🧠 Agentes** (o botão *Adaptar esta síntese* leva o resultado de um
+agente ao outro). Na CLI:
+
+```bash
+rag-cognus synthesize "Como reduzir a ansiedade e aquecer a voz antes de um pitch?" --judge
+rag-cognus adapt --file roteiro.txt --audience executivo --context pitch --minutes 2
+rag-cognus adapt --topic "Escuta ativa em reuniões" --audience estudante --context aula
+```
+
+Temas compostos são divididos pelo modelo leve (`OLLAMA_FAST_MODEL`, ex.: `qwen3.5:4b`);
+a síntese e a adaptação usam `OLLAMA_CHAT_MODEL`. Mantenha o mesmo `OLLAMA_NUM_CTX` para todos
+os usos do modelo: valores diferentes fazem o Ollama recarregá-lo a cada troca.
+
 **Pergunta por voz:** na aba Conversa, grave a pergunta pelo microfone do navegador.
 O áudio é transcrito localmente pelo Whisper (`faster-whisper`, modelo em `WHISPER_MODEL`)
 e segue o mesmo caminho da pergunta digitada; no MLflow o trace recebe `input_mode=voice`.

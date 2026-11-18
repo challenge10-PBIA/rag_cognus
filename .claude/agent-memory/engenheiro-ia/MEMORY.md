@@ -1,0 +1,2 @@
+- [Hook bloqueia literal databricks://](hook_bloqueia_literal_databricks.md) — use outra URI remota nos testes de rejeição de tracking
+- [create_app toca o banco real](create_app_toca_banco_real.md) — amostras da API: use FakeServices(tmp_path), não Settings()

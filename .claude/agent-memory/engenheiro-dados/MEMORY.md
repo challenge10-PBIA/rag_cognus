@@ -1,0 +1,1 @@
+- [Curadoria de fontes na web](reference_curadoria_fontes_web.md) — sites que abrem/bloqueiam no WebFetch; Europe PMC REST para JABA/ASHA

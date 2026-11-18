@@ -35,7 +35,12 @@ def test_chat_retrieval_displays_evidence(app_env):
     assert "Encontrei 1 trecho" in app.chat_message[1].markdown[0].value
     assert any("Storytelling" in text.value for text in app.text)
     assert any("citado" not in e.label and e.label.startswith("1.") for e in app.expander)
-    assert [t.label for t in app.tabs] == ["💬 Conversa", "📚 Evidências", "📊 Métricas"]
+    assert [t.label for t in app.tabs] == [
+        "💬 Conversa",
+        "📚 Evidências",
+        "📊 Métricas",
+        "🧠 Agentes",
+    ]
     assert "1 trechos, 0 citados" in app.chat_message[1].caption[0].value
     app.chat_input[0].set_value("rouquidão").run()
     picker = next(s for s in app.selectbox if s.label == "Pergunta")
@@ -141,3 +146,66 @@ def test_app_works_without_whisper_installed(app_env, monkeypatch):
     assert not app.exception
     assert not app.audio_input
     assert any("[audio]" in c.value for c in app.caption)
+
+
+def test_agents_tab_synthesizes_and_adapts(app_env, monkeypatch):  # spec 001, AC-12
+    from langchain_core.messages import AIMessage
+    from langchain_core.runnables import RunnableLambda
+    from streamlit.testing.v1 import AppTest
+
+    from rag_cognus import agents_ui
+    from rag_cognus.agents.agents_judges import make_communication_judge, make_evidence_judge
+    from rag_cognus.agents.communication import CommunicationAgent
+    from rag_cognus.agents.evidence import EvidenceAgent
+
+    def fake(payload):
+        return RunnableLambda(lambda _: AIMessage(json.dumps(payload, ensure_ascii=False)))
+
+    draft = {
+        "summary": "Histórias deixam a apresentação clara.",
+        "claims": [{"text": "Storytelling dá clareza.", "chunk_ids": ["a"], "strength": "forte"}],
+        "conflicts": [],
+        "gaps": [],
+        "confidence": "alta",
+    }
+    adapted = {
+        "adapted_text": "Comece com uma história curta.",
+        "changes": ["Frase mais curta"],
+        "rehearsal_tips": ["Faça uma pausa após a história"],
+    }
+
+    def score(*names):
+        return fake({n: {"score": 5, "reason": "ok"} for n in names})
+
+    monkeypatch.setattr(
+        agents_ui, "evidence_agent_for", lambda r, s: EvidenceAgent(r, s, fake(draft), fake({}))
+    )
+    monkeypatch.setattr(
+        agents_ui, "communication_agent_for", lambda s: CommunicationAgent(s, fake(adapted))
+    )
+    monkeypatch.setattr(
+        agents_ui,
+        "evidence_judge_for",
+        lambda s: make_evidence_judge(s, score("coverage", "groundedness", "conflict_handling")),
+    )
+    monkeypatch.setattr(
+        agents_ui,
+        "communication_judge_for",
+        lambda s: make_communication_judge(s, score("audience_fit", "fidelity", "clarity")),
+    )
+    app = AppTest.from_function(run_app, default_timeout=30).run()
+    app.toggle[1].set_value(True).run()  # Avaliar respostas: também avalia os agentes
+    next(t for t in app.text_area if t.label == "Tema").set_value("Como usar storytelling?")
+    next(b for b in app.button if b.label == "Analisar evidências").click().run()
+    assert not app.exception
+    assert any("Histórias deixam" in m.value for m in app.markdown)
+    assert any(m.label == "Cobertura do tema" and m.value == "5 / 5" for m in app.metric)
+
+    next(b for b in app.button if b.label.startswith("Adaptar esta síntese")).click().run()
+    text = next(t for t in app.text_area if t.label == "Texto da sua apresentação")
+    assert "Storytelling dá clareza." in text.value
+    next(b for b in app.button if b.label == "Adaptar ao público").click().run()
+    assert not app.exception
+    assert any("Comece com uma história curta." in i.value for i in app.info)
+    assert any(m.label == "Tempo estimado" for m in app.metric)
+    assert any(m.label == "Fidelidade ao conteúdo" and m.value == "5 / 5" for m in app.metric)

@@ -77,3 +77,60 @@ def test_databricks_tracking_is_rejected():
     with pytest.raises(ValueError, match="MLflow local"):
         Settings(tracking_uri="databricks://projeto")
     assert Settings().tracking_uri == "http://127.0.0.1:5001"
+
+
+def test_online_scores_use_batch_metric_names(documents):  # AC-3, AC-6 (spec 004)
+    from rag_cognus.evaluation import score_online
+
+    output = fake_rag(documents, Settings()).predict("storytelling", "apresentacoes_oratoria")
+    result = score_online(
+        fake_judge(), "storytelling", output, niche="apresentacoes_oratoria", latency_seconds=2.5
+    )
+    m = result["metrics"]
+    assert set(METRICS) | {"quality_score"} <= set(m)
+    assert m["quality_score"] == pytest.approx(21 / 5)
+    assert m["citation_integrity"] == 1 and m["latency_seconds"] == 2.5
+    assert m["niche_metadata_precision_proxy"] == 1.0
+    assert [j["name"] for j in result["judges"]] == list(METRICS)
+    assert result["judges"][0] == {
+        "name": "context_relevance",
+        "label": "Relevância do contexto",
+        "score": 5,
+        "reason": "ok",
+    }
+    no_niche = score_online(fake_judge(), "q", output, niche=None, latency_seconds=1)
+    assert no_niche["metrics"]["niche_metadata_precision_proxy"] is None
+
+
+def test_online_logger_writes_local_run_and_judge_assessments(documents, isolated_tracking):
+    from rag_cognus.evaluation import log_online_evaluation, online_run_payload, score_online
+
+    settings = replace(Settings(), tracking_uri=isolated_tracking, online_experiment="online")
+    pipeline = fake_rag(documents, settings)
+    output = pipeline.predict("storytelling")
+    trace_id = mlflow.get_last_active_trace_id()
+    scored = score_online(fake_judge(), "storytelling", output, niche=None, latency_seconds=1.0)
+    payload = online_run_payload(settings, "abc123", output, scored, None, trace_id)
+    run_id = log_online_evaluation(settings, payload)  # AC-7
+    run = mlflow.get_run(run_id)
+    assert run.info.run_name == "ask-abc123"
+    assert run.data.tags["rag_cognus_online"] == "true"
+    assert run.data.tags["ask_id"] == "abc123" and run.data.tags["abstained"] == "false"
+    assert run.data.params["judge_model"] == settings.judge
+    assert run.data.params["niche"] == "none"
+    assert run.data.metrics["accuracy"] == 3
+    assert "niche_metadata_precision_proxy" not in run.data.metrics
+    assert mlflow.get_experiment(run.info.experiment_id).name == "online"
+    mlflow.flush_trace_async_logging()
+    trace = mlflow.get_trace(trace_id)
+    judged = {a.name: a for a in trace.info.assessments if a.source.source_type == "LLM_JUDGE"}
+    assert judged["accuracy"].value == 3
+
+
+def test_online_logger_refuses_remote_tracking():  # AC-8
+    from rag_cognus.evaluation import log_online_evaluation
+
+    settings = Settings()
+    object.__setattr__(settings, "tracking_uri", "http://mlflow.exemplo.com")
+    with pytest.raises(ValueError, match="MLflow local"):
+        log_online_evaluation(settings, {})

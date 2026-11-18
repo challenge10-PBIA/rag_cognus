@@ -17,6 +17,7 @@ from rag_cognus.judges import METRICS, as_dict, judge_response
 from rag_cognus.metrics import score_case
 
 EVAL_TAG = "rag_cognus_eval"
+ONLINE_TAG = "rag_cognus_online"
 
 
 def configure_tracking(settings: Settings):
@@ -194,3 +195,106 @@ def _as_dict(value) -> dict:
         except ValueError:
             return {}
     return value if isinstance(value, dict) else {}
+
+
+# ---------- avaliação online de cada /v1/ask (spec 004) ----------
+def score_online(
+    judge, query: str, output: dict, *, niche: str | None, latency_seconds: float, k: int = 5
+) -> dict:
+    """Notas do juiz + métricas determinísticas com os mesmos nomes do lote."""
+    judgment = judge_response(judge, query, output)
+    case = {"expectations": {"expected_niche": niche}} if niche else {}
+    extra = score_case(case, output, k)
+    metrics = as_dict(judgment) | {
+        "niche_metadata_precision_proxy": extra.get("niche_metadata_precision_proxy"),
+        "citation_integrity": extra.get("citation_integrity", 0.0),
+        "latency_seconds": float(latency_seconds),
+    }
+    judges = [
+        {
+            "name": name,
+            "label": label,
+            "score": getattr(judgment, name).score,
+            "reason": getattr(judgment, name).reason,
+        }
+        for name, label in METRICS.items()
+    ]
+    return {"metrics": metrics, "judges": judges}
+
+
+def online_run_payload(
+    settings: Settings,
+    ask_id: str,
+    output: dict,
+    scored: dict,
+    niche: str | None,
+    trace_id: str | None,
+) -> dict:
+    """O que o logger online registra: um run por ask no experimento online."""
+    return {
+        "experiment": settings.online_experiment,
+        "run_name": f"ask-{ask_id}",
+        "tags": {
+            ONLINE_TAG: "true",
+            "ask_id": ask_id,
+            "abstained": str(bool(output.get("abstained"))).lower(),
+        },
+        "params": {
+            "chat_model": settings.chat_model,
+            "judge_model": settings.judge,
+            "backend": settings.backend,
+            "top_k": str(settings.top_k),
+            "niche": niche or "none",
+            "gold_view": settings.gold_view,
+        },
+        "metrics": {k: float(v) for k, v in scored["metrics"].items() if v is not None},
+        "judges": scored["judges"],
+        "judge_model": settings.judge,
+        "trace_id": trace_id,
+    }
+
+
+def log_online_evaluation(settings: Settings, payload: dict) -> str:
+    """Grava o run online no MLflow local e as notas do juiz como assessments do trace."""
+    from mlflow import MlflowClient
+    from mlflow.entities import Metric, Param
+
+    uri = ensure_local_tracking(settings.tracking_uri)
+    client = MlflowClient(tracking_uri=uri)
+    # Garante o experimento na hora de logar: o MLflow pode ter subido depois da API.
+    experiment = client.get_experiment_by_name(payload["experiment"])
+    experiment_id = (
+        experiment.experiment_id if experiment else client.create_experiment(payload["experiment"])
+    )
+    tags = dict(payload["tags"])
+    if payload.get("trace_id"):
+        tags["trace_id"] = payload["trace_id"]
+    run = client.create_run(experiment_id, run_name=payload["run_name"], tags=tags)
+    run_id = run.info.run_id
+    try:
+        now = int(time.time() * 1000)
+        client.log_batch(
+            run_id,
+            metrics=[Metric(k, v, now, 0) for k, v in payload["metrics"].items()],
+            params=[Param(k, str(v)) for k, v in payload["params"].items()],
+        )
+        trace_id = payload.get("trace_id")
+        if trace_id:
+            if mlflow.get_tracking_uri() != uri:
+                mlflow.set_tracking_uri(uri)
+            mlflow.flush_trace_async_logging()
+            source = AssessmentSource(source_type="LLM_JUDGE", source_id=payload["judge_model"])
+            for item in payload["judges"]:
+                mlflow.log_feedback(
+                    trace_id=trace_id,
+                    name=item["name"],
+                    value=item["score"],
+                    rationale=item["reason"],
+                    source=source,
+                )
+            client.link_traces_to_run([trace_id], run_id)
+        client.set_terminated(run_id)
+    except Exception:
+        client.set_terminated(run_id, status="FAILED")
+        raise
+    return run_id
