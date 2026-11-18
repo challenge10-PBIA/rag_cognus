@@ -43,6 +43,11 @@ class Settings:
     # Porta 5001: no macOS a 5000 é ocupada pelo AirPlay Receiver.
     tracking_uri: str = "http://127.0.0.1:5001"
     experiment: str = "rag-cognus"
+    # Avaliação online de cada /v1/ask (spec 004): juiz em segundo plano → MLflow local.
+    online_experiment: str = "rag-cognus-online"
+    online_eval: bool = True
+    # Pleonasmos com LLM além das regras (spec 003); desligado por padrão (latência).
+    speech_pleonasm_llm: bool = False
 
     def __post_init__(self):
         qualified_name(self.gold_view)
@@ -88,7 +93,24 @@ class Settings:
             fast_model=os.getenv("OLLAMA_FAST_MODEL", ""),
             tracking_uri=os.getenv("MLFLOW_TRACKING_URI") or cls.tracking_uri,
             experiment=os.getenv("MLFLOW_EXPERIMENT_NAME", cls.experiment),
+            online_experiment=os.getenv("MLFLOW_ONLINE_EXPERIMENT") or cls.online_experiment,
+            online_eval=env_flag("RAG_ONLINE_EVAL", cls.online_eval),
+            speech_pleonasm_llm=env_flag("SPEECH_PLEONASM_LLM", cls.speech_pleonasm_llm),
         )
+
+
+_TRUE = {"1", "true", "yes", "sim", "on"}
+_FALSE = {"0", "false", "no", "nao", "não", "off"}
+
+
+def env_flag(name: str, default: bool) -> bool:
+    """Lê um booleano do ambiente; vazio = padrão, valor desconhecido = erro claro."""
+    value = (os.getenv(name) or "").strip().lower()
+    if not value:
+        return default
+    if value in _TRUE | _FALSE:
+        return value in _TRUE
+    raise ValueError(f"{name} deve ser true ou false (recebido {value!r}).")
 
 
 def ensure_local_tracking(uri: str) -> str:

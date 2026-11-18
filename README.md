@@ -90,7 +90,7 @@ local deste repositório. Ela analisa sessões de fala gravadas, guarda o progre
 
 ```bash
 python -m pip install -e '.[api,audio]'
-rag-cognus api                    # http://127.0.0.1:8000 · OpenAPI em /docs
+rag-cognus api                    # http://127.0.0.1:8001 · OpenAPI em /docs
 ```
 
 | Pilar da sessão | Medida | Nota 100 quando |
@@ -103,6 +103,26 @@ rag-cognus api                    # http://127.0.0.1:8000 · OpenAPI em /docs
 O índice da sessão é a média dos quatro pilares; números nunca vêm do LLM. Ansiedade é
 autoavaliação do usuário (1–5), não medida. O Whisper tende a apagar hesitações: a
 transcrição usa um prompt com vícios para registrá-las, mas valide com gravações reais.
+
+### Avaliação online
+
+Cada `POST /v1/ask` responde assim que o RAG termina; o juiz avalia a resposta em segundo
+plano no Ollama local e o resultado sai em `GET /v1/ask/{ask_id}/evaluation`
+([specs/004-avaliacao-rag-local.md](specs/004-avaliacao-rag-local.md)).
+
+```bash
+rag-cognus mlflow-local   # terminal 1: MLflow em http://127.0.0.1:5001
+rag-cognus mlflow-check   # confere o servidor e cria o experimento online se faltar
+rag-cognus api            # terminal 2
+```
+
+- No MLflow, abra o experimento `rag-cognus-online` (`MLFLOW_ONLINE_EXPERIMENT`): um run
+  `ask-<id>` por pergunta, com as notas do juiz, `quality_score` e `latency_seconds`.
+- Custo: o juiz ocupa o Ollama por dezenas de segundos depois de cada resposta, e a
+  próxima pergunta espera na fila. Juiz diferente do chat (`OLLAMA_JUDGE_MODEL`, menos viés
+  de autoavaliação) recarrega o modelo e soma latência.
+- `RAG_ONLINE_EVAL=false` desliga a avaliação. Sem MLflow no ar a API segue funcionando; a
+  avaliação só não é registrada (`mlflow_logged=false`).
 
 ## Agentes especializados
 

@@ -12,7 +12,7 @@ agentes e a voz, chamando Python direto. As telas pedem também o que não exist
 acústica da fala, histórico de sessões, índice, streak, conquistas, desafios e hábitos.
 
 ## Comportamento esperado
-- `rag-cognus api` sobe a API em `http://127.0.0.1:8000` (OpenAPI em `/docs`), CORS só para
+- `rag-cognus api` sobe a API em `http://127.0.0.1:8001` (OpenAPI em `/docs`), CORS só para
   o front local.
 - O usuário grava uma sessão (WAV 16-bit) num modo; a API transcreve com timestamps por palavra,
   calcula 4 pilares (ritmo, pausas, vícios, clareza) e o índice geral, gera recomendações (regras

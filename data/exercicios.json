@@ -1,0 +1,374 @@
+{
+  "versao": 1,
+  "aviso": "Conteúdo educativo, que não substitui avaliação fonoaudiológica. Se houver rouquidão persistente, dor ou desconforto ao falar, procure um fonoaudiólogo ou médico.",
+  "exercicios": [
+    {
+      "id": "resp-costodiafragmatica-01",
+      "titulo": "Respiração costodiafragmática com frases crescentes",
+      "categoria": "respiracao",
+      "pilares": [
+        "pace",
+        "pauses"
+      ],
+      "passos": [
+        "Solte pescoço e ombros com movimentos lentos de rotação.",
+        "Inspire expandindo a região das costelas e do abdômen, sem subir os ombros.",
+        "Solte o ar num 'sss' contínuo e, sem parar, transforme-o em 'zzz'.",
+        "Leia frases cada vez mais longas, inspirando apenas entre uma frase e outra."
+      ],
+      "duracao_min": 5,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Resultados de programas de aprimoramento vocal para estudantes de comunicação: comparação de duas propostas de treinamento",
+        "autor": "Maria Cristina de Menezes Borrego; Mara Behlau",
+        "ano": 2025,
+        "url": "https://www.scielo.br/j/acr/a/6TPckGcYMqQ5NfJ7qnHC9NC/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "resp-apoio-sem-forcar-01",
+      "titulo": "Apoio respiratório sem forçar a garganta",
+      "categoria": "respiracao",
+      "pilares": [
+        "pauses",
+        "clarity"
+      ],
+      "passos": [
+        "Antes de começar a falar, faça uma inspiração profunda e tranquila.",
+        "Fale usando o fluxo de ar para sustentar a voz, sem apertar a garganta.",
+        "Quando sentir o ar no fim, pare a frase e inspire de novo em vez de espremer as últimas palavras."
+      ],
+      "duracao_min": 3,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Taking Care of Your Voice",
+        "autor": "National Institute on Deafness and Other Communication Disorders (NIDCD/NIH)",
+        "ano": 2025,
+        "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
+        "tipo": "instituicao"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "ritmo-pausas-pontuacao-01",
+      "titulo": "Pausas guiadas pela pontuação",
+      "categoria": "ritmo_pausas",
+      "pilares": [
+        "pauses",
+        "pace"
+      ],
+      "passos": [
+        "Pegue um texto curto sem pontuação e marque à mão onde entram vírgulas e pontos.",
+        "Leia em voz alta fazendo uma pausa curta nas vírgulas e uma mais longa nos pontos.",
+        "Use as pausas dos pontos para inspirar, de acordo com o sentido do texto.",
+        "Grave a leitura e confira se as pausas caíram onde você marcou."
+      ],
+      "duracao_min": 10,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Resultados de programas de aprimoramento vocal para estudantes de comunicação: comparação de duas propostas de treinamento",
+        "autor": "Maria Cristina de Menezes Borrego; Mara Behlau",
+        "ano": 2025,
+        "url": "https://www.scielo.br/j/acr/a/6TPckGcYMqQ5NfJ7qnHC9NC/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "ritmo-virgula-sentido-01",
+      "titulo": "A vírgula que muda o sentido",
+      "categoria": "ritmo_pausas",
+      "pilares": [
+        "pauses",
+        "clarity"
+      ],
+      "passos": [
+        "Escolha uma frase cujo sentido muda conforme a posição da vírgula.",
+        "Leia a frase nas duas versões, marcando a pausa só onde está a vírgula.",
+        "Peça a alguém que diga qual sentido entendeu em cada leitura."
+      ],
+      "duracao_min": 5,
+      "nivel": "intermediario",
+      "fonte": {
+        "titulo": "Resultados de programas de aprimoramento vocal para estudantes de comunicação: comparação de duas propostas de treinamento",
+        "autor": "Maria Cristina de Menezes Borrego; Mara Behlau",
+        "ano": 2025,
+        "url": "https://www.scielo.br/j/acr/a/6TPckGcYMqQ5NfJ7qnHC9NC/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "ritmo-enfase-modulacao-01",
+      "titulo": "Ênfase e modulação em frases marcadas",
+      "categoria": "ritmo_pausas",
+      "pilares": [
+        "clarity",
+        "pace"
+      ],
+      "passos": [
+        "Sublinhe numa frase as palavras que carregam a ideia principal.",
+        "Leia destacando as palavras sublinhadas com variação de altura e de intensidade.",
+        "Leia um texto leve em tons mais agudos e um texto sério em tons mais graves.",
+        "Compare as gravações e observe se o destaque ficou claro sem acelerar a fala."
+      ],
+      "duracao_min": 10,
+      "nivel": "intermediario",
+      "fonte": {
+        "titulo": "Resultados de programas de aprimoramento vocal para estudantes de comunicação: comparação de duas propostas de treinamento",
+        "autor": "Maria Cristina de Menezes Borrego; Mara Behlau",
+        "ano": 2025,
+        "url": "https://www.scielo.br/j/acr/a/6TPckGcYMqQ5NfJ7qnHC9NC/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "artic-leitura-rapida-precisa-01",
+      "titulo": "Leitura rápida com articulação precisa",
+      "categoria": "articulacao",
+      "pilares": [
+        "pace",
+        "diction"
+      ],
+      "passos": [
+        "Leia um texto publicitário curto primeiro em velocidade normal, articulando bem.",
+        "Aumente a velocidade aos poucos, mantendo todas as sílabas nítidas.",
+        "Quando alguma sílaba sumir, volte à velocidade anterior e repita."
+      ],
+      "duracao_min": 5,
+      "nivel": "intermediario",
+      "fonte": {
+        "titulo": "Resultados de programas de aprimoramento vocal para estudantes de comunicação: comparação de duas propostas de treinamento",
+        "autor": "Maria Cristina de Menezes Borrego; Mara Behlau",
+        "ano": 2025,
+        "url": "https://www.scielo.br/j/acr/a/6TPckGcYMqQ5NfJ7qnHC9NC/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "artic-sobrearticulacao-01",
+      "titulo": "Sobrearticulação na leitura",
+      "categoria": "articulacao",
+      "pilares": [
+        "diction",
+        "clarity"
+      ],
+      "passos": [
+        "Escolha um texto curto em português para ler em voz alta.",
+        "Leia exagerando os movimentos: abra mais a boca e movimente bem os lábios.",
+        "Faça cinco séries de um minuto, com pausa breve entre elas.",
+        "Depois, leia o mesmo texto de forma natural e note a diferença na nitidez."
+      ],
+      "duracao_min": 5,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Efeito imediato de diferentes exercícios no espaço vocálico de mulheres com e sem nódulos vocais",
+        "autor": "Fernanda Pereira França; Anna Alice Almeida; Leonardo Wanderley Lopes",
+        "ano": 2022,
+        "url": "https://scielo.br/j/codas/a/k3LssbczVZZP4tkfmbZb4LK/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "artic-orofacial-01",
+      "titulo": "Mobilidade orofacial: rotação de língua e bico-sorriso",
+      "categoria": "articulacao",
+      "pilares": [
+        "diction"
+      ],
+      "passos": [
+        "Com a boca fechada, gire a língua entre os dentes e a parte interna dos lábios, nos dois sentidos.",
+        "Alterne lábios em bico e lábios em sorriso largo, de forma lenta e ampla.",
+        "Finalize lendo uma frase curta e observe a mobilidade da boca."
+      ],
+      "duracao_min": 3,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Aquecimento e desaquecimento vocais: revisão sistemática",
+        "autor": "Vanessa Veis Ribeiro; Letícia Fernandez Frigo; Gabriele Rodrigues Bastilha; Carla Aparecida Cielo",
+        "ano": 2016,
+        "url": "https://www.scielo.br/j/rcefac/a/47rW5K8NFbCgJSsYD4hNY4K/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "aquec-sons-vibrantes-01",
+      "titulo": "Aquecimento com sons vibrantes e fricativos",
+      "categoria": "aquecimento_vocal",
+      "pilares": [
+        "diction",
+        "clarity"
+      ],
+      "passos": [
+        "Faça vibração de lábios ou de língua (como 'brrr' ou 'trrr') de forma sustentada e confortável.",
+        "Repita a vibração subindo e descendo numa escala, sem forçar os extremos.",
+        "Sustente um 'zzz' sonoro e depois faça o mesmo em escala ascendente.",
+        "Termine com um 'mmm' mastigado, movimentando a mandíbula enquanto emite o som."
+      ],
+      "duracao_min": 10,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Aquecimento e desaquecimento vocais: revisão sistemática",
+        "autor": "Vanessa Veis Ribeiro; Letícia Fernandez Frigo; Gabriele Rodrigues Bastilha; Carla Aparecida Cielo",
+        "ano": 2016,
+        "url": "https://www.scielo.br/j/rcefac/a/47rW5K8NFbCgJSsYD4hNY4K/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "aquec-canudo-alta-resistencia-01",
+      "titulo": "Aquecimento com canudo fino",
+      "categoria": "aquecimento_vocal",
+      "pilares": [
+        "clarity"
+      ],
+      "passos": [
+        "Use um canudo rígido e fino e coloque-o entre os lábios, bem vedado.",
+        "Emita um som parecido com 'vu' em altura e volume confortáveis, com todo o ar passando pelo canudo.",
+        "Faça cinco séries de um minuto, descansando entre elas.",
+        "Pare se sentir desconforto ou tontura."
+      ],
+      "duracao_min": 5,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Efeito imediato de diferentes exercícios no espaço vocálico de mulheres com e sem nódulos vocais",
+        "autor": "Fernanda Pereira França; Anna Alice Almeida; Leonardo Wanderley Lopes",
+        "ano": 2022,
+        "url": "https://scielo.br/j/codas/a/k3LssbczVZZP4tkfmbZb4LK/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "projecao-ressonancia-01",
+      "titulo": "Ressonância para projetar a voz",
+      "categoria": "projecao",
+      "pilares": [
+        "clarity",
+        "diction"
+      ],
+      "passos": [
+        "Emita sequências de fricativas sonoras como 'vzj vzj vzj' com a voz confortável.",
+        "Alterne com sons nasais ('mmm', 'nnn') sentindo a vibração no rosto.",
+        "Fale sequências articulatórias em voz salmodiada, como um canto falado.",
+        "Leia um texto informativo mantendo essa ressonância para a voz chegar mais longe sem esforço."
+      ],
+      "duracao_min": 10,
+      "nivel": "intermediario",
+      "fonte": {
+        "titulo": "Resultados de programas de aprimoramento vocal para estudantes de comunicação: comparação de duas propostas de treinamento",
+        "autor": "Maria Cristina de Menezes Borrego; Mara Behlau",
+        "ano": 2025,
+        "url": "https://www.scielo.br/j/acr/a/6TPckGcYMqQ5NfJ7qnHC9NC/?lang=en",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "projecao-sem-gritar-01",
+      "titulo": "Projetar sem gritar",
+      "categoria": "projecao",
+      "pilares": [
+        "clarity",
+        "pace"
+      ],
+      "passos": [
+        "Evite extremos: nem gritar, nem sussurrar, nem falar muito alto ou muito baixo.",
+        "Em ambiente barulhento, reduza o ruído ou aproxime-se do público em vez de competir com o barulho.",
+        "Em salas grandes, use microfone e amplificação quando houver.",
+        "Faça pausas de descanso vocal ao longo do dia se for falar por muito tempo."
+      ],
+      "duracao_min": 5,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Taking Care of Your Voice",
+        "autor": "National Institute on Deafness and Other Communication Disorders (NIDCD/NIH)",
+        "ano": 2025,
+        "url": "https://www.nidcd.nih.gov/health/taking-care-your-voice",
+        "tipo": "instituicao"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "vicios-pausa-silenciosa-01",
+      "titulo": "Trocar o 'éé' por uma pausa silenciosa",
+      "categoria": "vicios_linguagem",
+      "pilares": [
+        "fillers",
+        "pauses"
+      ],
+      "passos": [
+        "Escolha os vícios que quer reduzir (por exemplo 'é', 'hum', 'tipo').",
+        "Treine perceber o instante em que o vício vai sair.",
+        "Nesse instante, feche a boca e faça uma pausa silenciosa curta no lugar do vício.",
+        "Pratique numa fala curta para uma ou mais pessoas e repita até a pausa ficar automática."
+      ],
+      "duracao_min": 10,
+      "nivel": "intermediario",
+      "fonte": {
+        "titulo": "Reducing speech disfluencies during public speaking using brief habit reversal",
+        "autor": "Brittany Pawlik; Christopher J. Perrin",
+        "ano": 2020,
+        "url": "https://doi.org/10.1002/jaba.627",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "vicios-reversao-habito-01",
+      "titulo": "Reversão de hábito para pausas preenchidas",
+      "categoria": "vicios_linguagem",
+      "pilares": [
+        "fillers"
+      ],
+      "passos": [
+        "Defina com precisão o que conta como vício: sons como 'ãã', 'hum', estalos de língua ou 'tipo' fora de lugar.",
+        "Treino de percepção: ouça uma gravação sua e sinalize cada ocorrência.",
+        "Treino de resposta alternativa: ao notar o vício chegando, substitua por uma ação que não combine com ele.",
+        "Faça uma nova fala curta e compare a contagem com a anterior."
+      ],
+      "duracao_min": 15,
+      "nivel": "intermediario",
+      "fonte": {
+        "titulo": "Using habit reversal to decrease filled pauses in public speaking",
+        "autor": "Carolyn Mancuso; Raymond G. Miltenberger",
+        "ano": 2016,
+        "url": "https://doi.org/10.1002/jaba.267",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    },
+    {
+      "id": "vicios-conscientizacao-01",
+      "titulo": "Conscientização com gravação e reforço",
+      "categoria": "vicios_linguagem",
+      "pilares": [
+        "fillers",
+        "clarity"
+      ],
+      "passos": [
+        "Grave uma fala curta de dois a três minutos sobre um tema conhecido.",
+        "Escute e anote cada vício de linguagem, com o momento em que aconteceu.",
+        "Fale de novo tentando perceber cada vício no instante em que ele aparece.",
+        "Repita a sessão de conscientização em outros dias como reforço, pois o efeito pode diminuir sem treino."
+      ],
+      "duracao_min": 10,
+      "nivel": "iniciante",
+      "fonte": {
+        "titulo": "Using awareness training to decrease nervous habits during public speaking",
+        "autor": "Claire Spieler; Raymond Miltenberger",
+        "ano": 2017,
+        "url": "https://doi.org/10.1002/jaba.362",
+        "tipo": "artigo"
+      },
+      "verificado_em": "2026-11-16"
+    }
+  ]
+}

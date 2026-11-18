@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-DEFAULT_PROFILE = {"name": "Você", "daily_goal_minutes": 10}
+DEFAULT_PROFILE = {"name": "Você", "daily_goal_minutes": 10, "mascot": None}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS profile (
@@ -27,7 +27,19 @@ CREATE TABLE IF NOT EXISTS habits (
     text TEXT NOT NULL,
     session_id TEXT
 );
+CREATE TABLE IF NOT EXISTS evaluations (
+    ask_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL,
+    judge_model TEXT,
+    mlflow_logged INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    metrics_json TEXT,
+    judges_json TEXT
+);
 """
+INTERRUPTED = "Avaliação interrompida."
 
 
 class Store:
@@ -39,6 +51,20 @@ class Store:
         self._db = sqlite3.connect(self.folder / "cognus.db", check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(SCHEMA)
+        # Spec 006, AC-11: bancos antigos ganham a coluna sem perder hábitos (idempotente).
+        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(habits)")}
+        if "exercise_id" not in columns:
+            self._db.execute("ALTER TABLE habits ADD COLUMN exercise_id TEXT")
+        # Spec 008, AC-5: perfil antigo ganha o mascote (JSON) sem perder nome e meta.
+        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(profile)")}
+        if "mascot_json" not in columns:
+            self._db.execute("ALTER TABLE profile ADD COLUMN mascot_json TEXT")
+        # Avaliação pendente de um processo anterior nunca vai terminar (spec 004, AC-4).
+        self._db.execute(
+            "UPDATE evaluations SET status = 'error', error = ? WHERE status = 'pending'",
+            (INTERRUPTED,),
+        )
+        self._db.commit()
 
     def _query(self, sql: str, params=()) -> list[sqlite3.Row]:
         with self._lock:
@@ -48,15 +74,26 @@ class Store:
 
     # ---------- perfil ----------
     def profile(self) -> dict:
-        rows = self._query("SELECT name, daily_goal_minutes FROM profile WHERE id = 1")
-        return dict(rows[0]) if rows else dict(DEFAULT_PROFILE)
+        """Perfil salvo; `mascot` é o JSON gravado (dict) ou None se ausente/ilegível."""
+        rows = self._query("SELECT name, daily_goal_minutes, mascot_json FROM profile WHERE id = 1")
+        if not rows:
+            return dict(DEFAULT_PROFILE)
+        row = dict(rows[0])
+        try:
+            mascot = json.loads(row.pop("mascot_json") or "null")
+        except ValueError:
+            mascot = None  # JSON corrompido: a API aplica o padrão (spec 008 AC-4)
+        return row | {"mascot": mascot}
 
-    def save_profile(self, name: str, daily_goal_minutes: int) -> dict:
+    def save_profile(self, name: str, daily_goal_minutes: int, mascot: dict | None = None) -> dict:
+        """`mascot=None` mantém o salvo; um dict substitui o objeto inteiro (spec 008 AC-3)."""
+        mascot_json = None if mascot is None else json.dumps(mascot, ensure_ascii=False)
         self._query(
-            "INSERT INTO profile (id, name, daily_goal_minutes) VALUES (1, ?, ?) "
+            "INSERT INTO profile (id, name, daily_goal_minutes, mascot_json) VALUES (1, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET name = excluded.name, "
-            "daily_goal_minutes = excluded.daily_goal_minutes",
-            (name, daily_goal_minutes),
+            "daily_goal_minutes = excluded.daily_goal_minutes, "
+            "mascot_json = COALESCE(excluded.mascot_json, profile.mascot_json)",
+            (name, daily_goal_minutes, mascot_json),
         )
         return self.profile()
 
@@ -92,11 +129,18 @@ class Store:
         return path if path.exists() else None
 
     # ---------- hábitos ----------
-    def add_habit(self, created_at: str, text: str, session_id: str | None) -> dict:
+    def add_habit(
+        self,
+        created_at: str,
+        text: str,
+        session_id: str | None,
+        exercise_id: str | None = None,
+    ) -> dict:
         with self._lock:
             cursor = self._db.execute(
-                "INSERT INTO habits (created_at, text, session_id) VALUES (?, ?, ?)",
-                (created_at, text, session_id),
+                "INSERT INTO habits (created_at, text, session_id, exercise_id) "
+                "VALUES (?, ?, ?, ?)",
+                (created_at, text, session_id, exercise_id),
             )
             self._db.commit()
         return {
@@ -104,8 +148,62 @@ class Store:
             "created_at": created_at,
             "text": text,
             "session_id": session_id,
+            "exercise_id": exercise_id,
         }
 
     def habits(self) -> list[dict]:
-        rows = self._query("SELECT id, created_at, text, session_id FROM habits ORDER BY id")
+        rows = self._query(
+            "SELECT id, created_at, text, session_id, exercise_id FROM habits ORDER BY id"
+        )
         return [dict(r) for r in rows]
+
+    # ---------- avaliação online do /v1/ask (spec 004) ----------
+    def create_evaluation(
+        self, ask_id: str, created_at: str, status: str, judge_model: str | None
+    ) -> None:
+        self._query(
+            "INSERT INTO evaluations (ask_id, created_at, status, judge_model) VALUES (?, ?, ?, ?)",
+            (ask_id, created_at, status, judge_model),
+        )
+
+    def finish_evaluation(
+        self,
+        ask_id: str,
+        finished_at: str,
+        status: str,
+        *,
+        metrics: dict | None = None,
+        judges: list[dict] | None = None,
+        mlflow_logged: bool = False,
+        error: str | None = None,
+    ) -> None:
+        self._query(
+            "UPDATE evaluations SET finished_at = ?, status = ?, metrics_json = ?, "
+            "judges_json = ?, mlflow_logged = ?, error = ? WHERE ask_id = ?",
+            (
+                finished_at,
+                status,
+                None if metrics is None else json.dumps(metrics, ensure_ascii=False),
+                None if judges is None else json.dumps(judges, ensure_ascii=False),
+                int(mlflow_logged),
+                error,
+                ask_id,
+            ),
+        )
+
+    def evaluation(self, ask_id: str) -> dict | None:
+        rows = self._query("SELECT * FROM evaluations WHERE ask_id = ?", (ask_id,))
+        if not rows:
+            return None
+        row = dict(rows[0])
+        return {
+            "ask_id": row["ask_id"],
+            "status": row["status"],
+            "metrics": json.loads(row["metrics_json"]) if row["metrics_json"] else None,
+            "judges": json.loads(row["judges_json"]) if row["judges_json"] else [],
+            "judge_model": row["judge_model"],
+            "mlflow_logged": bool(row["mlflow_logged"]),
+            "error": row["error"],
+            "created_at": row["created_at"],
+            "finished_at": row["finished_at"],
+        }

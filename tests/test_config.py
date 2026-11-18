@@ -33,3 +33,47 @@ def test_make_ollama_uses_shared_context():  # AC-1
     chat = make_ollama(Settings(num_ctx=12000, keep_alive="5m"), Out, model="m", num_predict=99)
     assert (chat.model, chat.num_ctx, chat.keep_alive, chat.num_predict) == ("m", 12000, "5m", 99)
     assert chat.format == Out.model_json_schema()
+
+
+ONLINE_VARS = ("MLFLOW_ONLINE_EXPERIMENT", "RAG_ONLINE_EVAL", "SPEECH_PLEONASM_LLM")
+
+
+def test_online_eval_defaults(monkeypatch):  # spec 004 AC-D1
+    for name in ONLINE_VARS:
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings.from_env()
+    assert settings.online_experiment == "rag-cognus-online"
+    assert settings.online_eval is True
+    assert settings.speech_pleonasm_llm is False
+
+
+def test_online_eval_from_env(monkeypatch):  # spec 004 AC-D1 + spec 003
+    monkeypatch.setenv("MLFLOW_ONLINE_EXPERIMENT", "meu-online")
+    monkeypatch.setenv("RAG_ONLINE_EVAL", "false")
+    monkeypatch.setenv("SPEECH_PLEONASM_LLM", "1")
+    settings = Settings.from_env()
+    assert (settings.online_experiment, settings.online_eval) == ("meu-online", False)
+    assert settings.speech_pleonasm_llm is True
+
+
+def test_invalid_bool_flag_is_rejected(monkeypatch):  # spec 004 AC-D1
+    monkeypatch.setenv("RAG_ONLINE_EVAL", "talvez")
+    with pytest.raises(ValueError, match="RAG_ONLINE_EVAL"):
+        Settings.from_env()
+
+
+def test_tracking_uri_still_rejects_databricks(monkeypatch):  # spec 004 AC-D1
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "databricks://perfil")
+    with pytest.raises(ValueError, match="não é um MLflow local"):
+        Settings.from_env()
+
+
+def test_env_example_documents_online_eval():  # spec 004 AC-D2
+    from pathlib import Path
+
+    text = (Path(__file__).parents[1] / ".env.example").read_text()
+    assert "MLFLOW_TRACKING_URI=http://127.0.0.1:5001" in text
+    for name in ("MLFLOW_EXPERIMENT_NAME=", "MLFLOW_ONLINE_EXPERIMENT=", "RAG_ONLINE_EVAL="):
+        assert name in text
+    assert "SPEECH_PLEONASM_LLM=" in text
+    assert "autoavaliação" in text
