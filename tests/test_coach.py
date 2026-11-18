@@ -213,3 +213,43 @@ def test_rules_mood_follows_score():
     assert coach.mood_for("session_summary", data(session=SESSION)) == "feliz"
     assert coach.mood_for("weakest_pillar", data([record(clarity=40)])) == "pensativo"
     assert coach.mood_for("pace", data()) == "neutro"
+
+
+# ---------- spec 013 AC-8 + specs 010/011: contrato do trace do mascote ----------
+
+
+def last_trace():
+    import mlflow
+
+    mlflow.flush_trace_async_logging()
+    return mlflow.get_trace(mlflow.get_last_active_trace_id())
+
+
+def test_explain_trace_follows_spec_011_contract():
+    from rag_cognus.llm import ollama_options
+
+    agent = coach.MascotCoach(
+        Settings(), chat=fake_chat({"text": "Seu índice foi 82. Ótimo!", "mood": "feliz"})
+    )
+    out = agent.explain("index", FACTS)
+    trace = last_trace()
+    root = next(s for s in trace.data.spans if s.parent_id is None)
+    assert root.name == "mascot_agent" and root.span_type == "AGENT"
+    assert root.inputs == {"topic": "index", "facts": FACTS}
+    assert root.outputs == {"response": out["text"], "mood": "feliz", "source": "llm"}
+    tags = trace.info.tags
+    assert tags["flow"] == "mascot" and tags["agent"] == "mascot" and tags["topic"] == "index"
+    assert {"chat_model", "judge_model"} <= set(tags)
+    llm = next(s for s in trace.data.spans if s.name == "mascot_explain")
+    assert llm.span_type == "LLM"
+    assert llm.get_attribute("role") == "fast"
+    expected = ollama_options(Settings(), "fast", num_predict=coach.EXPLAIN_NUM_PREDICT)
+    assert llm.get_attribute("options") == expected
+
+
+def test_explain_trace_marks_rules_fallback():
+    coach.MascotCoach(Settings(), chat=RunnableLambda(boom)).explain("pace", [])
+    trace = last_trace()
+    root = next(s for s in trace.data.spans if s.parent_id is None)
+    assert root.outputs["source"] == "regras"
+    assert trace.info.tags["mascot_source"] == "regras"

@@ -430,7 +430,7 @@ class Transcription(BaseModel):
     text: str
 
 
-# ---------- mascote coach (spec 009) ----------
+# ---------- mascote coach (spec 013) ----------
 MascotMood = Literal["feliz", "neutro", "pensativo"]
 CoachTopic = Literal[COACH_TOPICS]
 
@@ -477,7 +477,7 @@ class MascotSettings(BaseModel):
     tips_enabled: bool = True
 
 
-# ---------- onboarding (spec 010) ----------
+# ---------- onboarding (spec 014) ----------
 OnboardingStep = Literal["welcome", "privacy", "profile", "mascot", "microphone", "tour", "done"]
 
 
@@ -496,7 +496,7 @@ class Onboarding(BaseModel):
     needed: bool
 
 
-# ---------- consentimento de dados de uso (spec 010 AC-7a) ----------
+# ---------- consentimento de dados de uso (spec 014 AC-7a) ----------
 class PrivacyIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -101,7 +101,7 @@ class Store:
         )
         return self.profile()
 
-    # ---------- estado do app (spec 009 AC-10, spec 010 AC-6) ----------
+    # ---------- estado do app (spec 013 AC-10, spec 014 AC-6) ----------
     def state(self, key: str, default=None):
         rows = self._query("SELECT value_json FROM app_state WHERE key = ?", (key,))
         if not rows:

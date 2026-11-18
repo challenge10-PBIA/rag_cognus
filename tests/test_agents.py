@@ -221,3 +221,119 @@ def test_agent_run_is_traced_as_agent(documents):  # AC-11
     root = next(s for s in trace.data.spans if s.parent_id is None)
     assert root.span_type == "AGENT"
     assert trace.info.tags["agent"] == "evidence"
+
+
+# ---------- spec 010 AC-8 e spec 011: contrato do trace dos agentes ----------
+
+
+def last_trace():
+    mlflow.flush_trace_async_logging()
+    return mlflow.get_trace(mlflow.get_last_active_trace_id())
+
+
+def root_span(trace):
+    return next(s for s in trace.data.spans if s.parent_id is None)
+
+
+def assert_judge_ready(trace, request: str, response: str):  # 011 AC-9
+    from mlflow.genai.utils.trace_utils import (
+        extract_request_from_trace,
+        extract_response_from_trace,
+        resolve_inputs_from_trace,
+        resolve_outputs_from_trace,
+    )
+
+    assert resolve_inputs_from_trace(None, trace) and resolve_outputs_from_trace(None, trace)
+    assert request in extract_request_from_trace(trace)
+    # O MLflow serializa o dict de saída em JSON com escape ASCII (ó vira \\u00f3).
+    assert json.loads(extract_response_from_trace(trace))["response"] == response
+    assert {"flow", "chat_model", "judge_model"} <= set(trace.info.tags)
+    assert trace.info.request_preview.startswith(request[:40])
+    assert trace.info.response_preview == response
+
+
+def test_decomposition_fallback_reason_on_span(documents):  # 010 AC-8
+    def explode(_):
+        raise ConnectionError("modelo não instalado")
+
+    agent = evidence_agent(documents, fast_chat=RunnableLambda(explode))
+    agent.run(COMPOSITE)
+    span = next(s for s in last_trace().data.spans if s.name == "decompose_topic")
+    assert span.outputs == [COMPOSITE]
+    assert span.get_attribute("fallback_reason") == "ConnectionError"
+
+
+def test_evidence_trace_contract(documents):  # 011 AC-6, AC-9, AC-10
+    from mlflow.genai.utils.trace_utils import extract_retrieval_context_from_trace
+
+    from rag_cognus.llm import ollama_options
+
+    agent = evidence_agent(documents, fast_chat=fake({"items": ["storytelling", "rouquidão"]}))
+    result = agent.run(COMPOSITE, "apresentacoes_oratoria")
+    assert set(result) == {"topic", "subquestions", "evidence", "synthesis", "discarded_claims"}
+    trace = last_trace()
+    root = root_span(trace)
+    assert root.inputs == {"topic": COMPOSITE, "niche": "apresentacoes_oratoria"}
+    assert {"response", "claims", "gaps", "confidence", "cited_chunk_ids"} == set(root.outputs)
+    assert root.outputs["response"] == synthesis_to_text(result)
+    assert root.outputs["cited_chunk_ids"] == ["a"]
+    (docs,) = extract_retrieval_context_from_trace(trace).values()
+    assert docs and all(d["content"] and d["doc_uri"] for d in docs)
+    gather = next(s for s in trace.data.spans if s.name == "gather_evidence")
+    meta = gather.outputs[0]["metadata"]
+    assert (meta["chunk_id"], meta["doc_uri"], meta["subquestion"]) == (
+        "a",
+        "https://example.org/a",
+        "storytelling",
+    )
+    assert trace.info.tags["flow"] == "evidence"
+    assert_judge_ready(trace, COMPOSITE, root.outputs["response"])
+    spans = {s.name: s for s in trace.data.spans}
+    for name, role, predict in (
+        ("decompose_topic", "fast", 200),
+        ("synthesize_evidence", "generator", 1200),
+    ):
+        span = spans[name]
+        assert span.get_attribute("role") == role
+        assert span.get_attribute("model") == "qwen3.5:9b"
+        expected = ollama_options(Settings(), role, num_predict=predict)
+        assert span.get_attribute("options") == expected
+
+
+def test_communication_trace_contract():  # 011 AC-7, AC-9
+    agent = CommunicationAgent(Settings(), fake(ADAPTED))
+    profile = AudienceProfile(audience="executivo", context="pitch", minutes=1)
+    result = agent.run("Texto original.", profile, ["Afirmação de origem."])
+    trace = last_trace()
+    root = root_span(trace)
+    assert root.inputs == {
+        "text": "Texto original.",
+        "profile": profile.model_dump(),
+        "source_claims": ["Afirmação de origem."],
+    }
+    assert root.outputs["response"] == result["adapted"]["adapted_text"]
+    assert {"changes", "rehearsal_tips", "metrics"} <= set(root.outputs)
+    assert trace.info.tags["flow"] == "communication"
+    assert not trace.search_spans(span_type="RETRIEVER")
+    assert_judge_ready(trace, "Texto original.", ADAPTED["adapted_text"])
+
+
+def test_pipeline_trace_contract(documents):  # 011 AC-8, AC-9
+    from mlflow.genai.utils.trace_utils import extract_retrieval_context_from_trace
+
+    pipe = EvidenceToAudience(
+        evidence_agent(documents), CommunicationAgent(Settings(), fake(ADAPTED))
+    )
+    profile = AudienceProfile()
+    result = pipe.run("Como usar storytelling?", profile, "apresentacoes_oratoria")
+    trace = last_trace()
+    root = root_span(trace)
+    assert root.inputs == {
+        "topic": "Como usar storytelling?",
+        "profile": profile.model_dump(),
+        "niche": "apresentacoes_oratoria",
+    }
+    assert root.outputs["response"] == result["communication"]["adapted"]["adapted_text"]
+    assert len(extract_retrieval_context_from_trace(trace)) == 1
+    assert trace.info.tags["flow"] == "pipeline"
+    assert_judge_ready(trace, "Como usar storytelling?", ADAPTED["adapted_text"])

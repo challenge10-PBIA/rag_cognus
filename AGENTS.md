@@ -24,7 +24,7 @@ MLflow **local** (`http://127.0.0.1:5001`; URIs `databricks://` são proibidas).
 | `speech_analysis.py` | Ritmo, pausas, vícios, clareza, dicção da sessão | `tests/test_speech_analysis.py` |
 | `progress.py` | Streak, períodos, nível, conquistas, desafios | `tests/test_progress.py` |
 | `mascot.py` | Paleta fechada do mascote do perfil (spec 008) | `tests/test_mascot.py` |
-| `coach.py` | Mascote coach: dicas por regras, fatos e explicações com guarda de números (spec 009) | `tests/test_coach.py` |
+| `coach.py` | Mascote coach: dicas por regras, fatos e explicações com guarda de números (spec 013) | `tests/test_coach.py` |
 | `cli.py` | Comando `rag-cognus` | — |
 
 ## Comandos

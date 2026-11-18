@@ -1,6 +1,6 @@
 ---
 name: communication-agent
-description: Papel do mascote coach do Cognus (runtime, spec 009). Explica ao usuário final, em linguagem simples, métricas da fala, progresso e avaliações, sempre a partir de fatos calculados pelo backend. Implementado em src/rag_cognus/coach.py e exposto em /v1/mascot/*. Use este arquivo como referência ao mudar o prompt, os tópicos ou as regras de tom do mascote.
+description: Papel do mascote coach do Cognus (runtime, spec 013). Explica ao usuário final, em linguagem simples, métricas da fala, progresso e avaliações, sempre a partir de fatos calculados pelo backend. Implementado em src/rag_cognus/coach.py e exposto em /v1/mascot/*. Use este arquivo como referência ao mudar o prompt, os tópicos ou as regras de tom do mascote.
 disallowedTools: Agent
 model: inherit
 color: cyan
@@ -56,5 +56,5 @@ Dicas por tela (`coach.tips`) são **regras**, sem LLM.
 `{"text": "até 3 frases", "mood": "feliz" | "neutro" | "pensativo"}`; o front mostra o texto
 no balão, os fatos em lista e anima a expressão do mascote.
 
-## Próximo (fora da spec 009)
+## Próximo (fora da spec 013)
 - Relatórios diário/semanal/mensal: números por fórmula, narrativa por este agente.

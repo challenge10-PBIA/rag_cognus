@@ -1,4 +1,4 @@
-# 010 — Onboarding guiado pelo mascote
+# 014 — Onboarding guiado pelo mascote
 
 - **Status:** aprovada
 - **Módulos (backend):** `src/rag_cognus/api/app.py`, `src/rag_cognus/api/schemas.py`,
@@ -8,7 +8,7 @@
   `src/components/profile/profile-view.tsx` (exporta o editor do mascote; botão "Rever
   tutorial"), `src/app/globals.css`, `src/lib/api/*`
 - **Testes:** `tests/test_api.py`; front: typecheck/lint/build
-- **Depende de:** specs 008 e 009
+- **Depende de:** specs 008 e 013
 
 ## Problema
 No primeiro acesso o app abre direto no Início com nome "Você", meta de 10 min e mascote
@@ -52,7 +52,7 @@ mudar de forma relevante, a versão sobe e ele reaparece uma vez.
   `needed=true`.
 - **AC-5:** `completed_version` menor que `ONBOARDING_VERSION` → `needed=true` (testado
   trocando a constante via monkeypatch).
-- **AC-6:** Estado persiste em `app_state` (spec 009 AC-10), sem tocar na tabela `profile`;
+- **AC-6:** Estado persiste em `app_state` (spec 013 AC-10), sem tocar na tabela `profile`;
   abrir o mesmo banco duas vezes não falha.
 - **AC-7:** Funciona sem Ollama, Gold ou MLflow.
 - **AC-7a (consentimento):** Banco novo → `tracking_allowed=null`. `PUT /v1/privacy` grava a

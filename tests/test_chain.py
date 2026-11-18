@@ -146,3 +146,76 @@ def test_prompt_asks_for_structured_json():  # AC-9
 
     for key in ("resumo", "pontos", "recomendacao", "fontes", "trecho"):
         assert key in SYSTEM
+
+
+# ---------- spec 011: contrato do trace para os juízes do MLflow ----------
+
+
+def last_trace():
+    import mlflow
+
+    mlflow.flush_trace_async_logging()
+    return mlflow.get_trace(mlflow.get_last_active_trace_id())
+
+
+def root_span(trace):
+    return next(s for s in trace.data.spans if s.parent_id is None)
+
+
+def test_root_span_is_lean_and_return_unchanged(documents):  # 011 AC-1
+    result = pipeline(documents, structured()).predict("storytelling", "apresentacoes_oratoria")
+    root = root_span(last_trace())
+    assert root.name == "rag_cognus"
+    assert root.inputs == {"query": "storytelling", "niche": "apresentacoes_oratoria"}
+    assert set(root.outputs) == {"response", "abstained", "cited_chunk_ids", "fontes"}
+    assert root.outputs["response"] == result["response"]
+    for key in ("retrieved_context", "structured", "citations", "retrieved_chunk_ids"):
+        assert key in result
+
+
+def test_previews_show_question_and_answer(documents):  # 011 AC-2
+    result = pipeline(documents, structured()).predict("storytelling")
+    info = last_trace().info
+    assert info.request_preview == "storytelling"
+    assert info.response_preview == result["response"]
+    pipeline(documents, structured()).predict("zzzzdesconhecido")
+    assert last_trace().info.response_preview == ABSTENTION
+
+
+def test_rag_trace_is_readable_by_mlflow_judges(documents):  # 011 AC-9
+    from mlflow.genai.utils.trace_utils import (
+        extract_request_from_trace,
+        extract_response_from_trace,
+        resolve_inputs_from_trace,
+        resolve_outputs_from_trace,
+    )
+
+    result = pipeline(documents, structured()).predict("storytelling")
+    trace = last_trace()
+    assert resolve_inputs_from_trace(None, trace) and resolve_outputs_from_trace(None, trace)
+    assert "storytelling" in extract_request_from_trace(trace)
+    # O MLflow serializa o dict de saída em JSON com escape ASCII (ó vira \\u00f3).
+    assert json.loads(extract_response_from_trace(trace))["response"] == result["response"]
+    tags = trace.info.tags
+    assert tags["flow"] == "rag"
+    assert tags["chat_model"] == "qwen3.5:9b" and tags["judge_model"] == "qwen3.5:9b"
+
+
+def test_rag_llm_span_has_model_role_and_options(documents):  # 011 AC-10 / 010
+    from rag_cognus.llm import ollama_options
+
+    pipeline(documents, structured()).predict("storytelling")
+    span = next(s for s in last_trace().data.spans if s.name == "generate_grounded_answer")
+    assert span.get_attribute("model") == "qwen3.5:9b"
+    assert span.get_attribute("role") == "generator"
+    expected = ollama_options(Settings(), "generator", num_predict=900)
+    assert span.get_attribute("options") == expected
+
+
+def test_failed_rag_marks_trace_as_error(documents):  # 011 AC-12 (pipeline real)
+    p = pipeline(documents, {"answer": "Texto", "answerable": True, "cited_chunk_ids": ["x"]})
+    with pytest.raises(ValueError):
+        p.predict("storytelling")
+    trace = last_trace()
+    assert trace.info.state.value == "ERROR"
+    assert trace.info.tags["error"] == "true"

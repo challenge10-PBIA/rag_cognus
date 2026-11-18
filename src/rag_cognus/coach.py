@@ -1,4 +1,4 @@
-"""Mascote coach (spec 009): dicas por regras e explicações com fatos do backend.
+"""Mascote coach (spec 013): dicas por regras e explicações com fatos do backend.
 
 Dicas e fatos são funções puras sobre os dados do produto (registros de sessão, perfil,
 sessão aberta, avaliação de uma resposta). O LLM só redige a explicação a partir desses
@@ -18,13 +18,14 @@ from pydantic import BaseModel
 
 from rag_cognus import progress
 from rag_cognus.config import Settings
-from rag_cognus.llm import make_ollama
+from rag_cognus.llm import llm_attributes, make_ollama, tag_llm_span, trace_tags
 from rag_cognus.speech_analysis import LONG_SILENCE, PACE_RANGE, PAUSE_RANGE, PILLAR_NAMES
 
 Mood = Literal["feliz", "neutro", "pensativo"]
 HAPPY_MIN_SCORE = 80  # mesmos limiares do front (spec 008 AC-11)
 NEUTRAL_MIN_SCORE = 60
 MAX_TEXT_CHARS = 600
+EXPLAIN_NUM_PREDICT = 300
 MAX_TIPS = 2
 
 
@@ -389,9 +390,13 @@ class Explanation(BaseModel):
 
 
 class MascotCoach:
+    """Agente do mascote (papel `avatar` do Hermes). LLM no papel `fast` (spec 010)."""
+
     def __init__(self, settings: Settings, chat=None):
+        self.settings = settings
+        self._llm = llm_attributes(settings, "fast", num_predict=EXPLAIN_NUM_PREDICT)
         chat = chat or make_ollama(
-            settings, Explanation, model=settings.fast_model or None, num_predict=300
+            settings, Explanation, role="fast", num_predict=EXPLAIN_NUM_PREDICT
         )
         self.chain = (
             ChatPromptTemplate.from_messages([("system", SYSTEM), ("human", HUMAN)])
@@ -399,17 +404,34 @@ class MascotCoach:
             | JsonOutputParser()
         )
 
-    @mlflow.trace(name="mascot_agent", span_type="AGENT")
+    @mlflow.trace(name="mascot_explain", span_type="LLM")
+    def _draft(self, label: str, definition: str, facts: str) -> Explanation:
+        tag_llm_span(self._llm)
+        raw = self.chain.invoke({"label": label, "definition": definition, "facts": facts})
+        return Explanation.model_validate(raw)
+
     def explain(self, topic: str, topic_facts: list[dict], mood: str = "neutro") -> dict:
-        mlflow.update_current_trace(tags={"agent": "mascot", "topic": topic})
+        """Span raiz enxuto no contrato da spec 011 (`flow=mascot`); retorno inalterado."""
+        with mlflow.start_span(name="mascot_agent", span_type="AGENT") as span:
+            span.set_inputs({"topic": topic, "facts": topic_facts})
+            tags = trace_tags(self.settings, "mascot") | {"agent": "mascot", "topic": topic}
+            mlflow.update_current_trace(tags=tags, request_preview=topic)
+            result = self._explain(topic, topic_facts, mood)
+            span.set_outputs(
+                {"response": result["text"], "mood": result["mood"], "source": result["source"]}
+            )
+            # Sinal para o agente de observabilidade: taxa de queda para regras.
+            mlflow.update_current_trace(
+                tags={"mascot_source": result["source"]}, response_preview=result["text"]
+            )
+        return result
+
+    def _explain(self, topic: str, topic_facts: list[dict], mood: str) -> dict:
         entry = GLOSSARY[topic]
         fallback = {"text": rules_text(topic, topic_facts), "mood": mood, "source": "regras"}
         lines = "\n".join(f"- {f['label']}: {f['value']}" for f in topic_facts) or "- (sem dados)"
         try:
-            raw = self.chain.invoke(
-                {"label": entry["label"], "definition": entry["text"], "facts": lines}
-            )
-            draft = Explanation.model_validate(raw)
+            draft = self._draft(entry["label"], entry["text"], lines)
         except Exception:  # Ollama fora, timeout ou JSON inválido: nunca derruba a API
             return fallback
         text = draft.text.strip()

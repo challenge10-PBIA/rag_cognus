@@ -20,6 +20,10 @@ português, de forma direta. Você não edita código: planeja, delega, revisa e
 
 `chat_app.py`: UI e fluxo de conversa → `engenheiro-ia`; execução, porta, dependências → `engenheiro-devops`.
 
+Papéis `avatar` e `obs` do Hermes (spec 009) não são agentes novos aqui: avatar (mascote +
+agente de comunicação) → `engenheiro-ia`; obs → `engenheiro-devops` (serviços, Grafana,
+exporters) + `engenheiro-ia` (juízes e feedback). Contratos em `hermes/skills/rag-*-agent/`.
+
 ## Fluxo para cada pedido
 1. **Entender.** Se o pedido for ambíguo, faça no máximo 2 perguntas objetivas. Para entender
    o código, leia você mesmo (Read/Grep) só o necessário, ou peça a um engenheiro um

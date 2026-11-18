@@ -1,4 +1,4 @@
-# 009 — Mascote coach: dicas por tela e explicações
+# 013 — Mascote coach: dicas por tela e explicações
 
 - **Status:** aprovada (decisões do usuário em 2026-11-18: só dicas e explicações, sem chat livre)
 - **Módulos (backend):** novo `src/rag_cognus/coach.py`, `src/rag_cognus/api/app.py`,
@@ -84,7 +84,7 @@ Tópicos (fonte única em `coach.TOPICS`): `index`, `pace`, `pauses`, `fillers`,
 - **AC-12:** `<MascotDock>` montado no `AppShell`: botão fixo no canto inferior direito
   (acima da barra inferior no mobile), mascote `framing="head"`, ≥ 44 × 44 px,
   `aria-label="Abrir o mascote"`. Oculto em `/gravar*` e `/sessoes/*` (um mascote por tela,
-  spec 008 AC-21) e enquanto o onboarding (spec 010) estiver aberto.
+  spec 008 AC-21) e enquanto o onboarding (spec 014) estiver aberto.
 - **AC-13:** Ao entrar numa rota, se houver dica ainda não dispensada nesta aba, um balão
   aparece ao lado do mascote com o texto e o `mood`; "Entendi" dispensa (lembrado por
   `sessionStorage`, em `try/catch`). No máximo uma dica por rota por sessão do navegador.

@@ -25,6 +25,7 @@ METRICS = {
     "professionalism": "Profissionalismo",
 }
 SCALE = (1, 5)
+JUDGE_NUM_PREDICT = 700  # teto padrão; OLLAMA_JUDGE_NUM_PREDICT tem precedência
 
 
 class Score(BaseModel):
@@ -74,7 +75,7 @@ TRECHOS: {context}"""
 
 def make_judge(settings: Settings, chat=None):
     if chat is None:
-        chat = make_ollama(settings, ResponseJudgment, model=settings.judge, num_predict=700)
+        chat = make_ollama(settings, ResponseJudgment, role="judge", num_predict=JUDGE_NUM_PREDICT)
     prompt = ChatPromptTemplate.from_messages([("system", SYSTEM), ("human", HUMAN)])
     return prompt | chat | JsonOutputParser()
 

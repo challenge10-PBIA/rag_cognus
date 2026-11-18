@@ -30,8 +30,8 @@ from rag_cognus.config import Settings
 from rag_cognus.speech_analysis import PILLAR_NAMES, analyze_words, energy_contour
 
 ROOT = Path(__file__).resolve().parents[3]
-# Sobe quando o tutorial muda de forma relevante: quem concluiu vê de novo (spec 010 AC-5).
-ONBOARDING_VERSION = 2  # 2: passo de consentimento de dados de uso (spec 010 AC-7b)
+# Sobe quando o tutorial muda de forma relevante: quem concluiu vê de novo (spec 014 AC-5).
+ONBOARDING_VERSION = 2  # 2: passo de consentimento de dados de uso (spec 014 AC-7b)
 # Sobe quando o texto/uso do consentimento muda: recursos futuros pedem a escolha de novo.
 PRIVACY_POLICY_VERSION = 1
 
@@ -114,7 +114,7 @@ def make_pleonasm_checker(settings: Settings, chat=None):
     from rag_cognus.llm import make_ollama
 
     if chat is None:
-        chat = make_ollama(settings, PleonasmCheck, model=settings.fast, num_predict=300)
+        chat = make_ollama(settings, PleonasmCheck, role="fast", num_predict=300)
     prompt = ChatPromptTemplate.from_messages(
         [("system", PLEONASM_SYSTEM), ("human", "FALA: {text}\n\nCANDIDATOS: {candidates}")]
     )
@@ -183,7 +183,7 @@ class Services:
         return None
 
     def mascot_chat(self):
-        """LLM das explicações do mascote (spec 009). None = ChatOllama padrão."""
+        """LLM das explicações do mascote (spec 013). None = ChatOllama padrão."""
         return None
 
     def pleonasm_checker(self):
@@ -759,7 +759,7 @@ def create_app(services: Services | None = None) -> FastAPI:
         )
         return Response(status_code=204)
 
-    # ---------- mascote coach (spec 009) ----------
+    # ---------- mascote coach (spec 013) ----------
     def coach_data(session_id: str | None = None, ask_id: str | None = None) -> dict:
         return {
             "records": store.records(),
@@ -810,7 +810,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             trace_id = None
         return result | {"topic": body.topic, "facts": topic_facts, "trace_id": trace_id}
 
-    # ---------- onboarding (spec 010) ----------
+    # ---------- onboarding (spec 014) ----------
     def onboarding() -> dict:
         saved = store.state("onboarding", {})
         completed = saved.get("completed_version")
@@ -826,7 +826,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     def get_onboarding():
         return onboarding()
 
-    # ---------- consentimento (spec 010 AC-7a) ----------
+    # ---------- consentimento (spec 014 AC-7a) ----------
     # Hoje a escolha só é guardada; nada liga ou desliga registros por ela ainda.
     def privacy() -> dict:
         saved = store.state("privacy", {})

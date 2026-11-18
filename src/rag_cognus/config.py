@@ -48,6 +48,24 @@ class Settings:
     online_eval: bool = True
     # Pleonasmos com LLM além das regras (spec 003); desligado por padrão (latência).
     speech_pleonasm_llm: bool = False
+    # Opções do LLM por papel (spec 010). None = não envia: vale o Modelfile do modelo.
+    temperature: float = 0.0
+    judge_temperature: float = 0.0
+    fast_temperature: float = 0.0
+    seed: int | None = None
+    top_p: float | None = None
+    llm_top_k: int | None = None  # top_k da amostragem (OLLAMA_TOP_K), não o RAG_TOP_K
+    repeat_penalty: float | None = None
+    presence_penalty: float | None = None
+    judge_presence_penalty: float | None = None  # None = presence_penalty
+    generator_num_predict: int | None = None  # None = padrão de cada chamada
+    judge_num_predict: int | None = None
+    fast_num_predict: int | None = None
+    think: bool = False
+    judge_think: bool = False
+    judge_num_ctx: int | None = None  # só vale se o juiz usar outro modelo
+    fast_num_ctx: int | None = None
+    timeout: float = 300.0
 
     def __post_init__(self):
         qualified_name(self.gold_view)
@@ -55,6 +73,7 @@ class Settings:
             raise ValueError("Backend deve ser bm25/dense; top_k deve ser positivo.")
         if self.num_ctx < 2048:
             raise ValueError("num_ctx (OLLAMA_NUM_CTX) deve ser pelo menos 2048.")
+        _validate_llm(self)
         ensure_local_tracking(self.tracking_uri)
 
     @property
@@ -96,7 +115,71 @@ class Settings:
             online_experiment=os.getenv("MLFLOW_ONLINE_EXPERIMENT") or cls.online_experiment,
             online_eval=env_flag("RAG_ONLINE_EVAL", cls.online_eval),
             speech_pleonasm_llm=env_flag("SPEECH_PLEONASM_LLM", cls.speech_pleonasm_llm),
+            **{name: value for name in LLM_ENV if (value := _env_llm(name)) is not None},
         )
+
+
+# Campo do Settings -> variável do .env (spec 010). Vazio = padrão do Settings.
+LLM_ENV = {
+    "temperature": "OLLAMA_TEMPERATURE",
+    "judge_temperature": "OLLAMA_JUDGE_TEMPERATURE",
+    "fast_temperature": "OLLAMA_FAST_TEMPERATURE",
+    "seed": "OLLAMA_SEED",
+    "top_p": "OLLAMA_TOP_P",
+    "llm_top_k": "OLLAMA_TOP_K",
+    "repeat_penalty": "OLLAMA_REPEAT_PENALTY",
+    "presence_penalty": "OLLAMA_PRESENCE_PENALTY",
+    "judge_presence_penalty": "OLLAMA_JUDGE_PRESENCE_PENALTY",
+    "generator_num_predict": "OLLAMA_GENERATOR_NUM_PREDICT",
+    "judge_num_predict": "OLLAMA_JUDGE_NUM_PREDICT",
+    "fast_num_predict": "OLLAMA_FAST_NUM_PREDICT",
+    "think": "OLLAMA_THINK",
+    "judge_think": "OLLAMA_JUDGE_THINK",
+    "judge_num_ctx": "OLLAMA_JUDGE_NUM_CTX",
+    "fast_num_ctx": "OLLAMA_FAST_NUM_CTX",
+    "timeout": "OLLAMA_TIMEOUT",
+}
+_INT_FIELDS = {
+    "seed",
+    "llm_top_k",
+    "generator_num_predict",
+    "judge_num_predict",
+    "fast_num_predict",
+}
+_INT_FIELDS |= {"judge_num_ctx", "fast_num_ctx"}
+
+
+def _env_llm(field_name: str):
+    """Valor tipado de uma variável do LLM; None quando vazia."""
+    name = LLM_ENV[field_name]
+    raw = (os.getenv(name) or "").strip()
+    if field_name in {"think", "judge_think"}:
+        return env_flag(name, False) if raw else None
+    if not raw:
+        return None
+    try:
+        return int(raw) if field_name in _INT_FIELDS else float(raw)
+    except ValueError:
+        kind = "inteiro" if field_name in _INT_FIELDS else "número"
+        raise ValueError(f"{name} deve ser um {kind} (recebido {raw!r}).") from None
+
+
+def _validate_llm(s: Settings) -> None:
+    for name in ("temperature", "judge_temperature", "fast_temperature"):
+        if not 0 <= getattr(s, name) <= 2:
+            raise ValueError(f"{LLM_ENV[name]} deve estar entre 0 e 2.")
+    if s.top_p is not None and not 0 < s.top_p <= 1:
+        raise ValueError("OLLAMA_TOP_P deve ser maior que 0 e no máximo 1.")
+    for name in ("generator_num_predict", "judge_num_predict", "fast_num_predict"):
+        value = getattr(s, name)
+        if value is not None and value < 64:
+            raise ValueError(f"{LLM_ENV[name]} deve ser pelo menos 64 (o JSON seria cortado).")
+    for name in ("judge_num_ctx", "fast_num_ctx"):
+        value = getattr(s, name)
+        if value is not None and value < 2048:
+            raise ValueError(f"{LLM_ENV[name]} deve ser pelo menos 2048.")
+    if s.timeout <= 0:
+        raise ValueError("OLLAMA_TIMEOUT deve ser maior que 0 (segundos).")
 
 
 _TRUE = {"1", "true", "yes", "sim", "on"}
