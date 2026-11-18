@@ -2,3 +2,5 @@
 - [create_app toca o banco real](create_app_toca_banco_real.md) — amostras da API: use FakeServices(tmp_path), não Settings()
 - [Guard bloqueia Bash por texto](hook_bloqueia_cat_env.md) — .env, "rag-cognus evaluate", DATABRICKS_*: use Read/Write/Edit
 - [Juízes MLflow 3.18 + Ollama](mlflow_juizes_ollama.md) — URIs openai:/ e ollama:/, extração de inputs/contexto
+- [Teste de trace instável](flaky_pipeline_trace_contract.md) — test_pipeline_trace_contract falha às vezes no harness; rode de novo
+- [API temporária: SQLite isolado](api_temporaria_sqlite_isolado.md) — Store() interrompe avaliações pending; use data_dir próprio

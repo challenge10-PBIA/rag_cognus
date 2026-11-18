@@ -28,6 +28,16 @@ def services_line(path: Path = RUNS / "services.json", now: float | None = None)
     return "Serviços: " + ", ".join(parts) if parts else None
 
 
+def harness_hint(status: list[str]) -> str | None:
+    """Com arquivos alterados, lembra o harness rápido (spec 015); o completo leva minutos."""
+    if not status:
+        return None
+    return (
+        "Iterando: `python hermes/harness/check.py --changed`; "
+        "o completo (`check.py` sem flag) só no fim."
+    )
+
+
 def main() -> None:
     read_payload()
     lines: list[str] = []
@@ -39,6 +49,7 @@ def main() -> None:
         shown = ", ".join(s[3:] for s in status[:MAX_FILES])
         more = f" (+{len(status) - MAX_FILES})" if len(status) > MAX_FILES else ""
         lines.append(f"Arquivos alterados: {shown}{more}")
+        lines.append(harness_hint(status))
 
     harness = RUNS / "last_harness.json"
     if harness.exists():

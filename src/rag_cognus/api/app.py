@@ -24,6 +24,7 @@ from rag_cognus.agents.communication import CommunicationAgent
 from rag_cognus.agents.evidence import EvidenceAgent
 from rag_cognus.agents.pipeline import EvidenceToAudience
 from rag_cognus.agents.schemas import AUDIENCES, CONTEXTS, AudienceProfile
+from rag_cognus.api import metrics as api_metrics
 from rag_cognus.api import schemas as s
 from rag_cognus.api.store import Store
 from rag_cognus.config import Settings
@@ -466,8 +467,12 @@ def run_online_evaluation(
     output: dict,
     latency: float,
     trace_id: str | None,
+    registry: api_metrics.Registry | None = None,
 ) -> None:
-    """Juiz + métricas + MLflow em segundo plano (spec 004). Nunca levanta exceção."""
+    """Juiz + métricas + MLflow em segundo plano (spec 004). Nunca levanta exceção.
+
+    Com `registry`, publica as notas no /metrics (spec 016 AC-13); falha aí não derruba nada.
+    """
     from rag_cognus.evaluation import online_run_payload, score_online
     from rag_cognus.judges import make_judge
 
@@ -478,8 +483,10 @@ def run_online_evaluation(
             judge, query, output, niche=niche, latency_seconds=latency, k=settings.top_k
         )
     except Exception as exc:
+        _record_online(registry, "error")
         store.finish_evaluation(ask_id, _now(), "error", error=_judge_error(exc))
         return
+    _record_online(registry, "ok", scored["metrics"])
     try:
         services.evaluation_logger()(
             online_run_payload(settings, ask_id, output, scored, niche, trace_id)
@@ -497,6 +504,18 @@ def run_online_evaluation(
     )
 
 
+def _record_online(registry, outcome: str, scores: dict | None = None) -> None:
+    """Notas e resultado da avaliação online no /metrics; nunca levanta (spec 016 AC-13)."""
+    if registry is None:
+        return
+    try:
+        if scores is not None:
+            api_metrics.record_judge_scores(registry, scores)
+        api_metrics.record_online_eval(registry, outcome)
+    except Exception:
+        pass
+
+
 def create_app(services: Services | None = None) -> FastAPI:
     services = services or Services(Settings.from_env())
     app = FastAPI(
@@ -511,8 +530,15 @@ def create_app(services: Services | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware, allow_origins=origins.split(","), allow_methods=["*"], allow_headers=["*"]
     )
+    registry = api_metrics.create_registry()  # um por app (spec 016 AC-11)
+    app.add_middleware(api_metrics.MetricsMiddleware, registry=registry)
     store = services.store
     app.state.services = services
+    app.state.metrics = registry
+
+    @app.get("/metrics", include_in_schema=False)
+    def prometheus_metrics():
+        return Response(registry.render(), media_type=api_metrics.CONTENT_TYPE)
 
     def gold():
         try:
@@ -684,11 +710,17 @@ def create_app(services: Services | None = None) -> FastAPI:
         settings = services.settings
         pipeline = RagPipeline(gold(), settings, chat=services.rag_chat())
         start = time.perf_counter()
+        ask_duration = registry.get(api_metrics.ASK_DURATION)
         try:
             result = pipeline.predict(body.query, body.niche)
         except ValueError as exc:
+            ask_duration.observe(time.perf_counter() - start, outcome="error")
             raise HTTPException(422, str(exc)) from exc
+        except Exception:
+            ask_duration.observe(time.perf_counter() - start, outcome="error")
+            raise
         latency = time.perf_counter() - start
+        ask_duration.observe(latency, outcome="ok")
         trace_id = mlflow.get_last_active_trace_id()
         ask_id = uuid.uuid4().hex[:12]
         status = "pending" if settings.online_eval else "disabled"
@@ -703,6 +735,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                 result,
                 latency,
                 trace_id,
+                registry,
             )
         return result | {
             "trace_id": trace_id,

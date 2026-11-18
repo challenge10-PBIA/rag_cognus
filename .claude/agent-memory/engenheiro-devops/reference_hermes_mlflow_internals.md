@@ -13,6 +13,9 @@ Verificado em 2026-11-18 (Hermes v0.23.1, MLflow 3.18.0):
 - MLflow: juízes criados na UI gravam `gateway:/<endpoint>` (AI Gateway do servidor, provedor
   Ollama existe). Em código: `openai:/m` precisa OPENAI_API_KEY+OPENAI_API_BASE no processo do
   servidor (jobs herdam os.environ); `ollama:/m` funciona sem env (base localhost:11434).
+- `mlflow server` 3.18 tem middleware anti DNS rebinding: `--allowed-hosts` (padrão localhost +
+  IPs privados) recusa `Host: mlflow:5001` em rede do Compose; a lista substitui o padrão, então
+  inclua loopback junto (spec 019).
 
 **How to apply:** comece a investigação por esses caminhos; reconfirme se as versões mudaram.
 Specs ligadas: 009, 011, 012. Veja [[guard-quirks]].

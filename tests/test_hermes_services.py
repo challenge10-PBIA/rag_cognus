@@ -122,3 +122,10 @@ def test_inject_context_ignora_cache_velho_ou_ausente(tmp_path):
     assert inject.services_line(cache) is None
     cache.write_text("não é json")
     assert inject.services_line(cache) is None
+
+
+# Spec 015 AC-6: com arquivos alterados, orienta o harness rápido durante a iteração.
+def test_inject_context_orienta_harness_changed():
+    line = inject.harness_hint(["M src/rag_cognus/chain.py"])
+    assert "check.py --changed" in line and "só no fim" in line
+    assert inject.harness_hint([]) is None
