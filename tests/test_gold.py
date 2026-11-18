@@ -115,3 +115,28 @@ def test_settings_read_token_from_env(monkeypatch):
     monkeypatch.setenv("DATABRICKS_TOKEN", "dapi-1")
     settings = Settings.from_env()
     assert settings.databricks_auth == "token" and settings.token == "dapi-1"
+
+
+def test_phonetics_loader_uses_separate_view(monkeypatch, documents):
+    import rag_cognus.gold as gold
+
+    captured = []
+    for document in documents:
+        document.metadata.update(document_type="phonetic_exercise", exercise={"id": document.id})
+
+    def fake_load(settings, timeout):
+        captured.append(settings.gold_view)
+        return documents
+
+    monkeypatch.setattr(gold, "load_from_databricks", fake_load)
+    assert gold.load_exercises_from_databricks(Settings()) == documents
+    assert captured == [gold.PHONETICS_VIEW]
+    assert Settings().gold_view != gold.PHONETICS_VIEW
+
+
+def test_phonetics_loader_rejects_wrong_type(monkeypatch, documents):
+    import rag_cognus.gold as gold
+
+    monkeypatch.setattr(gold, "load_from_databricks", lambda settings, timeout: documents)
+    with pytest.raises(ValueError, match="tipo documental"):
+        gold.load_exercises_from_databricks(Settings())

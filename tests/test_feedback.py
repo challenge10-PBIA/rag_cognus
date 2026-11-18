@@ -257,3 +257,32 @@ def test_spec008_ac8_pillar_score_and_maintain():  # spec 008 AC-8
     keep = build(analysis(pace=95, pauses=85, fillers=99, clarity=88, diction=90))
     assert [(r["title"].startswith("Manter"), r["maintain"]) for r in keep] == [(True, True)]
     assert keep[0]["pillar_score"] == 85
+
+
+def test_shared_exercises_are_replaced_by_unused_candidates():
+    shared = ex("shared", "pace")
+    shared["pilares"] = ["pace", "pauses"]
+
+    def catalog(pillar, limit=2):
+        return [shared, ex(f"{pillar}-one", pillar), ex(f"{pillar}-two", pillar)][:limit]
+
+    recs = build(analysis(pace=30, pauses=40), exercises_fn=catalog)
+    ids = [[e["id"] for e in r["exercises"]] for r in recs]
+    assert ids == [["shared", "pace-one"], ["pauses-one", "pauses-two"]]
+    assert recs[0]["exercises"][0] == shared
+
+
+def test_exhausted_catalog_does_not_repeat_even_when_llm_requests_it():
+    shared = ex("shared", "pace")
+    shared["pilares"] = ["pace", "pauses"]
+
+    def catalog(pillar, limit=2):
+        return [shared, shared][:limit]
+
+    recs = build(
+        analysis(pace=30, pauses=40),
+        retriever=FakeRetriever(),
+        chat=FakeChat({"subs": [], "exercises": ["shared", "shared"]}),
+        exercises_fn=catalog,
+    )
+    assert [[e["id"] for e in r["exercises"]] for r in recs] == [["shared"], []]
