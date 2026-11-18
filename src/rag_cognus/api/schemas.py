@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_cognus.agents.schemas import AudienceProfile
+from rag_cognus.coach import TOPICS as COACH_TOPICS
 from rag_cognus.mascot import IDS as MASCOT_IDS
 
 
@@ -427,3 +428,83 @@ class Habit(BaseModel):
 
 class Transcription(BaseModel):
     text: str
+
+
+# ---------- mascote coach (spec 013) ----------
+MascotMood = Literal["feliz", "neutro", "pensativo"]
+CoachTopic = Literal[COACH_TOPICS]
+
+
+class MascotTip(BaseModel):
+    id: str
+    text: str
+    mood: MascotMood
+    topic: CoachTopic | None = None
+
+
+class MascotTips(BaseModel):
+    tips: list[MascotTip]
+    enabled: bool
+
+
+class MascotTopic(BaseModel):
+    id: CoachTopic
+    label: str
+
+
+class ExplainIn(BaseModel):
+    topic: CoachTopic
+    route: str = Field(default="/", max_length=200)
+    session_id: str | None = Field(default=None, max_length=120)
+    ask_id: str | None = Field(default=None, max_length=120)
+
+
+class Fact(BaseModel):
+    label: str
+    value: str
+
+
+class Explanation(BaseModel):
+    topic: CoachTopic
+    text: str
+    mood: MascotMood
+    facts: list[Fact]
+    source: Literal["llm", "regras"]
+    trace_id: str | None = None
+
+
+class MascotSettings(BaseModel):
+    tips_enabled: bool = True
+
+
+# ---------- onboarding (spec 014) ----------
+OnboardingStep = Literal["welcome", "privacy", "profile", "mascot", "microphone", "tour", "done"]
+
+
+class OnboardingIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step: OnboardingStep | None = None
+    status: Literal["completed", "skipped", "reset"] | None = None
+
+
+class Onboarding(BaseModel):
+    version: int
+    completed_version: int | None
+    completed_at: str | None
+    step: OnboardingStep | None
+    needed: bool
+
+
+# ---------- consentimento de dados de uso (spec 014 AC-7a) ----------
+class PrivacyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tracking_allowed: bool
+
+
+class Privacy(BaseModel):
+    tracking_allowed: bool | None  # None = ainda não decidiu (tratar como não permitido)
+    decided_at: str | None
+    policy_version: int
+    decided_version: int | None

@@ -24,7 +24,8 @@ if [ -f "$PROFILE_DIR/config.yaml" ]; then
 fi
 
 sed "s#__REPO__#$REPO#g" "$REPO/hermes/config.yaml" > "$PROFILE_DIR/config.yaml"
-chmod +x "$REPO"/hermes/hooks/*.py "$REPO"/hermes/harness/check.py
+chmod +x "$REPO"/hermes/hooks/*.py "$REPO"/hermes/harness/check.py \
+  "$REPO"/hermes/harness/services.py
 mkdir -p "$REPO/.hermes-runs"
 
 echo "→ config instalada em $PROFILE_DIR/config.yaml"
@@ -38,3 +39,19 @@ echo "  3. $PROFILE doctor"
 echo "  4. Painel:  .venv/bin/streamlit run hermes/monitor/app.py --server.port 8502"
 echo "  5. Agente:  cd $REPO && $PROFILE      (aceite os hooks na 1ª vez)"
 echo "     TDD estrito: HERMES_TDD_STRICT=1 $PROFILE"
+echo "  6. Serviços:  python hermes/harness/services.py   (MLflow, Ollama, API e Grafana)"
+echo
+echo "Avaliação com juiz (rag-cognus evaluate): o ideal é 1 slot no Ollama."
+echo "       launchctl setenv OLLAMA_NUM_PARALLEL 1   e reinicie o Ollama; ao terminar,"
+echo "       launchctl setenv OLLAMA_NUM_PARALLEL 3   e reinicie de novo (dia a dia com o Hermes)"
+echo
+echo "Opcional — Grafana Cloud (papel [obs]; passo a passo em docs/estudos/hermes-mcp-grafana.md):"
+echo "  a. Na stack https://estevaomaia.grafana.net crie um service account (papel Viewer)"
+echo "     e um token para ele."
+echo "  b. No .env da raiz do repo ($REPO/.env, ignorado pelo git; nunca no .env.example),"
+echo "     preencha (o wrapper hermes/mcp/grafana.sh lê só estas duas chaves):"
+echo "       GRAFANA_URL=https://estevaomaia.grafana.net"
+echo "       GRAFANA_SERVICE_ACCOUNT_TOKEN=<cole o token aqui>"
+echo "  c. $PROFILE config set mcp_servers.grafana.enabled true"
+echo "     (volta a false se rodar este install.sh de novo)"
+echo "  d. $PROFILE mcp list   (Docker aberto; a 1ª conexão baixa a imagem mcp/grafana)"

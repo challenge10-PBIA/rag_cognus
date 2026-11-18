@@ -8,10 +8,24 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from pathlib import Path
 
 from _common import ROOT, RUNS, read_payload, reply
 
 MAX_FILES = 12
+SERVICES_TTL = 300  # cache de hermes/harness/services.py vale 5 min
+
+
+def services_line(path: Path = RUNS / "services.json", now: float | None = None) -> str | None:
+    """Resumo do último `services.py` se o cache for recente; sem rede."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if (now or time.time()) - float(data["ts"]) >= SERVICES_TTL:
+            return None
+        parts = [f"{s['name']} {'UP' if s.get('up') else 'DOWN'}" for s in data["services"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return "Serviços: " + ", ".join(parts) if parts else None
 
 
 def main() -> None:
@@ -36,6 +50,10 @@ def main() -> None:
             lines.append(f"Último harness: {state} (há {age} min)")
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
+
+    services = services_line()
+    if services:
+        lines.append(services)
 
     lint = RUNS / "last_lint.txt"
     if lint.exists():

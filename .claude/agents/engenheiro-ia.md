@@ -18,6 +18,9 @@ informação, pare e diga exatamente o que falta.
 - `judges.py`, `metrics.py`, `evaluation.py` (métricas 1–5, precision/recall@k, MRR,
   integridade de citações; registro no MLflow local).
 - `speech.py` (faster-whisper) e a lógica de conversa em `chat_app.py`.
+- Papel avatar (agente de comunicação via mascote: `mascot.py`, `agents/communication.py`,
+  futuro `agents/avatar.py`) e a parte juízes/feedback do papel obs. Contrato em
+  `hermes/skills/rag-avatar-agent/SKILL.md` e `hermes/skills/rag-observability-agent/SKILL.md`.
 - Testes: `test_retrieval.py`, `test_chain.py`, `test_response_metrics.py`,
   `test_evaluation.py`, `test_speech.py`, `test_chat_app.py`.
 

@@ -62,7 +62,8 @@ delegation:
   # Subagentes usam o mesmo Qwen local (herdam model/provider).
   max_iterations: 60
   # Cada filho paralelo ocupa um slot do Ollama. Combine com OLLAMA_NUM_PARALLEL=3
-  # (pai + 2 filhos). Com pouca VRAM, use 1.
+  # (pai + 2 filhos). Com pouca VRAM, use 1. Para avaliação com juiz (rag-cognus evaluate)
+  # o ideal é OLLAMA_NUM_PARALLEL=1: veja hermes/README.md ("Alternar o paralelismo").
   max_concurrent_children: 2
   # 2 = o líder pode criar um sub-orquestrador (role="orchestrator") que cria folhas.
   max_spawn_depth: 2
@@ -72,6 +73,38 @@ delegation:
   # O TUI do pai é dono do stdin; aprovação perigosa em subagente é negada (seguro).
   subagent_auto_approve: false
   child_timeout_seconds: 1200
+
+# ── MCP: Grafana Cloud (papel [obs]) ─────────────────────────────────────────
+# Stack: https://estevaomaia.grafana.net (plano free). Usamos o mcp-grafana OSS em stdio,
+# autenticado por token de service account, e NÃO o MCP gerenciado (mcp.grafana.com), que
+# conta cada usuário conectado como usuário ativo do Grafana Assistant (cobrado).
+# URL e token vêm SÓ do .env da raiz do repo (ignorado pelo git; nunca do .env.example):
+#   GRAFANA_URL=https://estevaomaia.grafana.net
+#   GRAFANA_SERVICE_ACCOUNT_TOKEN=<token do service account, papel Viewer>
+# O wrapper hermes/mcp/grafana.sh lê só essas duas chaves (sem source do .env), dá
+# precedência ao que já estiver exportado e faz exec do `docker run ... mcp/grafana -t stdio`.
+# Ligar: ragdev config set mcp_servers.grafana.enabled true   (o install.sh desfaz;
+# para ficar permanente, mude enabled aqui e reinstale). Testar: ragdev mcp list.
+# Passo a passo: docs/estudos/hermes-mcp-grafana.md
+mcp_servers:
+  grafana:
+    enabled: false
+    lazy: true                       # só conecta quando uma ferramenta é usada
+    connect_timeout: 60              # 1ª vez o docker baixa a imagem
+    timeout: 60
+    command: "__REPO__/hermes/mcp/grafana.sh"   # sem Docker: troque o exec do wrapper
+    args: []
+    tools:
+      # Só leitura e lista curta (cada ferramenta pesa no prompt do 9B). Confira os nomes
+      # reais com `ragdev mcp list` depois do primeiro connect.
+      include: ["search_dashboards", "get_dashboard_by_uid", "list_datasources",
+                "query_prometheus", "query_loki_logs", "list_alert_rules"]
+  # Alternativa: MCP gerenciado do Grafana Cloud (OAuth; cobra por usuário do Assistant).
+  # grafana_cloud:
+  #   enabled: false
+  #   url: "https://mcp.grafana.com/mcp"   # login: ragdev mcp login grafana_cloud
+  #   tools:
+  #     exclude: ["ask_assistant", "agento11y_*"]
 
 skills:
   creation_nudge_interval: 0         # evita que o 9B pare para criar skills no meio da tarefa

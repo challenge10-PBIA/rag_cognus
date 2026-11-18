@@ -47,3 +47,21 @@ def test_embedding_requests_are_bounded(documents):
         many.append(d)
     retriever = GoldRetriever(many, Settings(backend="dense"), LimitedEmbeddings())
     assert len(retriever.search("apresentação", k=30)) == 12
+
+
+def test_retriever_span_documents_have_doc_uri(documents):  # 011 AC-3
+    import mlflow
+    from mlflow.genai.utils.trace_utils import extract_retrieval_context_from_trace
+
+    docs = [d.model_copy(deep=True) for d in documents]
+    del docs[1].metadata["source_url"]
+    retriever = GoldRetriever(docs, Settings(top_k=3))
+    found = retriever.retrieve("storytelling rouquidão escuta")
+    mlflow.flush_trace_async_logging()
+    trace = mlflow.get_trace(mlflow.get_last_active_trace_id())
+    (items,) = extract_retrieval_context_from_trace(trace).values()
+    assert len(items) == len(found) == 3
+    assert all(item["content"] for item in items)
+    uris = {item["doc_uri"] for item in items}
+    assert uris == {"https://example.org/a", "gold://doc-b", "https://example.org/c"}
+    assert all("doc_uri" not in d.metadata for d in retriever.documents)

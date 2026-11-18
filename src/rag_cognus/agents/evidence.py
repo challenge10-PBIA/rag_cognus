@@ -13,12 +13,16 @@ import re
 import mlflow
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from mlflow.entities import Document as TraceDocument
 
 from rag_cognus.agents.schemas import SubQuestions, SynthesisDraft
 from rag_cognus.config import Settings
-from rag_cognus.llm import make_ollama
+from rag_cognus.llm import llm_attributes, make_ollama, tag_llm_span, trace_tags
+from rag_cognus.retrieval import doc_uri
 
 MAX_SUBQUESTIONS = 4
+DECOMPOSE_NUM_PREDICT = 200
+SYNTHESIZE_NUM_PREDICT = 1200
 
 DECOMPOSE = """Você divide perguntas sobre comunicação, apresentações e fonoaudiologia.
 Divida a pergunta em 2 a 4 subperguntas independentes, cada uma respondível com UMA busca.
@@ -49,6 +53,13 @@ TRECHOS (agrupados por subpergunta):
 {evidence}"""
 
 
+def synthesis_text(synthesis: dict) -> str:
+    """Texto final da síntese: resumo + afirmações sustentadas (um item por linha)."""
+    lines = [synthesis["summary"].strip()]
+    lines += [f"- {claim['text']}" for claim in synthesis["claims"]]
+    return "\n".join(line for line in lines if line)
+
+
 def needs_split(topic: str) -> bool:
     """Heurística barata: só pergunta composta vale uma chamada de decomposição."""
     words = len(topic.split())
@@ -67,12 +78,17 @@ class EvidenceAgent:
         max_chunks: int = 12,
     ):
         self.retriever = retriever
+        self.settings = settings
+        self._fast_llm = llm_attributes(settings, "fast", num_predict=DECOMPOSE_NUM_PREDICT)
+        self._main_llm = llm_attributes(settings, "generator", num_predict=SYNTHESIZE_NUM_PREDICT)
         self.per_question_k = per_question_k
         self.max_chunks = max_chunks
         fast = fast_chat or make_ollama(
-            settings, SubQuestions, model=settings.fast, num_predict=200
+            settings, SubQuestions, role="fast", num_predict=DECOMPOSE_NUM_PREDICT
         )
-        main = chat or make_ollama(settings, SynthesisDraft, num_predict=1200)
+        main = chat or make_ollama(
+            settings, SynthesisDraft, role="generator", num_predict=SYNTHESIZE_NUM_PREDICT
+        )
         self.decomposer = (
             ChatPromptTemplate.from_messages([("system", DECOMPOSE), ("human", "{topic}")])
             | fast
@@ -86,13 +102,19 @@ class EvidenceAgent:
 
     @mlflow.trace(name="decompose_topic", span_type="LLM")
     def decompose(self, topic: str) -> list[str]:
+        tag_llm_span(self._fast_llm)
         topic = topic.strip()
         if not needs_split(topic):
             return [topic]
         try:
             items = SubQuestions.model_validate(self.decomposer.invoke({"topic": topic})).items
-        except Exception:
-            return [topic]  # modelo pequeno às vezes foge do schema: segue sem dividir
+        except Exception as exc:
+            # Modelo pequeno às vezes foge do schema (ou nem está instalado): segue sem
+            # dividir, mas deixa o motivo visível no trace (spec 010 AC-8).
+            span = mlflow.get_current_active_span()
+            if span is not None:
+                span.set_attribute("fallback_reason", type(exc).__name__)
+            return [topic]
         unique, seen = [], set()
         for item in (i.strip() for i in items):
             if item and item.casefold() not in seen:
@@ -100,28 +122,41 @@ class EvidenceAgent:
                 unique.append(item)
         return unique[:MAX_SUBQUESTIONS] or [topic]
 
-    @mlflow.trace(name="gather_evidence", span_type="RETRIEVER")
     def gather(self, subquestions: list[str], niche: str | None = None) -> list[dict]:
-        hits, seen = [], set()
-        for question in subquestions:
-            for doc in self.retriever.search(question, niche, k=self.per_question_k):
-                if doc.id in seen or len(hits) >= self.max_chunks:
-                    continue
-                seen.add(doc.id)
-                hits.append(
-                    {
-                        "subquestion": question,
+        """Devolve os hits de hoje; o span RETRIEVER recebe documentos no formato do contrato."""
+        with mlflow.start_span(name="gather_evidence", span_type="RETRIEVER") as span:
+            span.set_inputs({"subquestions": subquestions, "niche": niche})
+            hits, documents, seen = [], [], set()
+            for question in subquestions:
+                for doc in self.retriever.search(question, niche, k=self.per_question_k):
+                    if doc.id in seen or len(hits) >= self.max_chunks:
+                        continue
+                    seen.add(doc.id)
+                    hits.append(
+                        {
+                            "subquestion": question,
+                            "chunk_id": doc.id,
+                            "title": doc.metadata.get("title"),
+                            "audience": doc.metadata.get("audience"),
+                            "source_url": doc.metadata.get("source_url"),
+                            "text": doc.page_content,
+                        }
+                    )
+                    metadata = {
+                        **doc.metadata,
                         "chunk_id": doc.id,
-                        "title": doc.metadata.get("title"),
-                        "audience": doc.metadata.get("audience"),
-                        "source_url": doc.metadata.get("source_url"),
-                        "text": doc.page_content,
+                        "doc_uri": doc_uri(doc.metadata),
+                        "subquestion": question,
                     }
-                )
+                    documents.append(
+                        TraceDocument(id=doc.id, page_content=doc.page_content, metadata=metadata)
+                    )
+            span.set_outputs(documents)
         return hits
 
     @mlflow.trace(name="synthesize_evidence", span_type="LLM")
     def synthesize(self, topic: str, subquestions: list[str], hits: list[dict]) -> dict:
+        tag_llm_span(self._main_llm)
         grouped = {
             q: [
                 {k: h[k] for k in ("chunk_id", "title", "audience", "text")}
@@ -139,9 +174,29 @@ class EvidenceAgent:
         )
         return SynthesisDraft.model_validate(raw).model_dump()
 
-    @mlflow.trace(name="evidence_agent", span_type="AGENT")
     def run(self, topic: str, niche: str | None = None) -> dict:
-        mlflow.update_current_trace(tags={"agent": "evidence"})
+        """Devolve o dict completo; o span raiz recebe só o que os juízes leem (spec 011)."""
+        with mlflow.start_span(name="evidence_agent", span_type="AGENT") as span:
+            span.set_inputs({"topic": topic, "niche": niche})
+            tags = trace_tags(self.settings, "evidence") | {"agent": "evidence"}
+            mlflow.update_current_trace(tags=tags, request_preview=topic)
+            result = self._run(topic, niche)
+            synthesis = result["synthesis"]
+            response = synthesis_text(synthesis)
+            cited = [cid for claim in synthesis["claims"] for cid in claim["chunk_ids"]]
+            span.set_outputs(
+                {
+                    "response": response,
+                    "claims": synthesis["claims"],
+                    "gaps": synthesis["gaps"],
+                    "confidence": synthesis["confidence"],
+                    "cited_chunk_ids": list(dict.fromkeys(cited)),
+                }
+            )
+            mlflow.update_current_trace(response_preview=response)
+        return result
+
+    def _run(self, topic: str, niche: str | None) -> dict:
         if not topic.strip():
             raise ValueError("Tema vazio.")
         subquestions = self.decompose(topic)

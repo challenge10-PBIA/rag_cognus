@@ -17,6 +17,9 @@ informação, pare e diga exatamente o que falta.
 - `cli.py` (comandos `rag-cognus`, `mlflow-local`), `.env.example` (nunca `.env`).
 - Execução local: Ollama, MLflow open source em `127.0.0.1:5001`, Streamlit em `8501`.
 - Harness e automação de agentes: `hermes/` (config, hooks, harness, painel) e `.claude/`.
+- Papel obs, parte de infraestrutura: `hermes/harness/services.py`, Grafana Cloud por MCP
+  (`mcp_servers.grafana`), exporters de métricas. Contrato em
+  `hermes/skills/rag-observability-agent/SKILL.md`.
 
 ## Restrições
 - Não faça commit, push, tag nem altere secrets/variáveis do GitHub.

@@ -8,7 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rag_cognus.config import Settings
-from rag_cognus.llm import make_ollama
+from rag_cognus.llm import llm_attributes, make_ollama, tag_llm_span, trace_tags
 from rag_cognus.retrieval import GoldRetriever
 
 ABSTENTION = "Não encontrei evidências suficientes na base para responder com segurança."
@@ -29,6 +29,7 @@ Retorne somente JSON: {{"resumo": "texto", "pontos": ["texto"], "recomendacao": 
 "cited_chunk_ids": ["ID exato"]}}.
 """
 EXCERPT_CHARS = 240
+RAG_NUM_PREDICT = 900  # teto padrão; OLLAMA_GENERATOR_NUM_PREDICT tem precedência
 
 
 class Fonte(BaseModel):
@@ -95,12 +96,14 @@ def _response_text(answer: Answer) -> str:
 
 
 def make_chat(settings: Settings):
-    return make_ollama(settings, Answer, num_predict=900)
+    return make_ollama(settings, Answer, role="generator", num_predict=RAG_NUM_PREDICT)
 
 
 class RagPipeline:
     def __init__(self, retriever: GoldRetriever, settings: Settings, chat=None):
         self.retriever = retriever
+        self.settings = settings
+        self._llm = llm_attributes(settings, "generator", num_predict=RAG_NUM_PREDICT)
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", SYSTEM),
@@ -113,6 +116,7 @@ class RagPipeline:
 
     @mlflow.trace(name="generate_grounded_answer", span_type="LLM")
     def _generate(self, query: str, documents) -> Answer:
+        tag_llm_span(self._llm)
         context = json.dumps(
             [
                 {
@@ -134,8 +138,26 @@ class RagPipeline:
             raise ValueError("Resposta sem fontes: falta citação de trecho recuperado.")
         return answer
 
-    @mlflow.trace(name="rag_cognus", span_type="CHAIN")
     def predict(self, query: str, niche: str | None = None) -> dict:
+        """Devolve o dict completo; o span raiz recebe só o que os juízes leem (spec 011)."""
+        with mlflow.start_span(name="rag_cognus", span_type="CHAIN") as span:
+            span.set_inputs({"query": query, "niche": niche})
+            mlflow.update_current_trace(
+                tags=trace_tags(self.settings, "rag"), request_preview=query
+            )
+            try:
+                result = self._answer(query, niche)
+            except Exception:
+                mlflow.update_current_trace(tags={"error": "true"})
+                raise
+            span.set_outputs(
+                {k: result[k] for k in ("response", "abstained", "cited_chunk_ids")}
+                | {"fontes": result["structured"]["fontes"]}
+            )
+            mlflow.update_current_trace(response_preview=result["response"])
+        return result
+
+    def _answer(self, query: str, niche: str | None) -> dict:
         documents = self.retriever.retrieve(query, niche)
         answer = (
             self._generate(query, documents)

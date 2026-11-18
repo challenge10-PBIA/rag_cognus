@@ -60,6 +60,11 @@ def tokenize(text: str) -> list[str]:
     return [t for t in re.findall(r"\b\w+\b", plain) if t not in STOP_WORDS]
 
 
+def doc_uri(metadata: dict) -> str:
+    """URI do documento para os juízes do MLflow: a URL da fonte ou gold://<doc_id>."""
+    return metadata.get("source_url") or f"gold://{metadata.get('doc_id')}"
+
+
 def has_niche(document: Document, niche: str | None) -> bool:
     return niche is None or niche in json.loads(document.metadata.get("nichos_json", "[]"))
 
@@ -122,7 +127,10 @@ class GoldRetriever:
     def retrieve(self, query: str, niche: str | None = None) -> list[TraceDocument]:
         return [
             TraceDocument(
-                id=d.metadata["chunk_id"], page_content=d.page_content, metadata=d.metadata
+                id=d.metadata["chunk_id"],
+                page_content=d.page_content,
+                # Cópia: o índice nunca é alterado.
+                metadata={**d.metadata, "doc_uri": doc_uri(d.metadata)},
             )
             for d in self.search(query, niche)
         ]
