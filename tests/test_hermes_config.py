@@ -202,3 +202,69 @@ def test_wrapper_sem_token_falha_claro_sem_valores(tmp_path):
     assert not dump.exists(), "não pode chamar o docker sem token"
     assert "GRAFANA_SERVICE_ACCOUNT_TOKEN" in proc.stderr
     assert "exemplo.grafana.net" not in proc.stderr + proc.stdout
+
+
+# ---------- Spec 015 — desempenho do perfil no Mac de 24 GB ----------
+KEEP_TOOLSETS = {"terminal", "file", "skills", "todo", "memory", "delegation"}
+DROP_TOOLSETS = {"browser", "code_execution", "image_gen", "tts", "computer_use"}
+
+
+# AC-1
+def test_015_contexto_alinhado_e_ate_32k(tmp_path):
+    model = _config(tmp_path)["model"]
+    assert model["context_length"] == model["ollama_num_ctx"]
+    assert model["ollama_num_ctx"] <= 32768
+
+
+# AC-2
+def test_015_raciocinio_desligado(tmp_path):
+    assert _config(tmp_path)["agent"]["reasoning_effort"] == "none"
+
+
+# AC-3
+def test_015_um_filho_por_vez(tmp_path):
+    assert _config(tmp_path)["delegation"]["max_concurrent_children"] <= 1
+
+
+# AC-4
+def test_015_toolsets_enxutos(tmp_path):
+    disabled = set(_config(tmp_path)["agent"]["disabled_toolsets"])
+    assert DROP_TOOLSETS <= disabled
+    assert not KEEP_TOOLSETS & disabled
+
+
+# AC-5
+def test_015_compressao_e_grafana(tmp_path):
+    cfg = _config(tmp_path)
+    assert cfg["compression"]["threshold"] >= 0.75
+    grafana = cfg["mcp_servers"]["grafana"]
+    assert grafana["enabled"] is False and grafana["lazy"] is True
+
+
+# AC-6
+def test_015_harness_orienta_changed_na_iteracao():
+    text = (SKILLS / "rag-harness" / "SKILL.md").read_text(encoding="utf-8")
+    assert "--changed" in text and "só no fim" in text
+
+
+# AC-8
+def test_015_install_sugere_um_slot_e_mesmo_contexto(tmp_path):
+    text = (HERMES / "install.sh").read_text(encoding="utf-8")
+    ctx = _config(tmp_path)["model"]["ollama_num_ctx"]
+    assert "launchctl setenv OLLAMA_NUM_PARALLEL 1" in text
+    assert f"launchctl setenv OLLAMA_CONTEXT_LENGTH {ctx}" in text
+    assert "OLLAMA_FLASH_ATTENTION 1" in text and "OLLAMA_KV_CACHE_TYPE q8_0" in text
+
+
+# AC-7
+def test_015_docs_de_desempenho():
+    root = ROOT / "README.md"
+    for path in (HERMES / "README.md", root):
+        text = path.read_text(encoding="utf-8")
+        assert "Ajustes por hardware" in text, path
+        for key in ("OLLAMA_FLASH_ATTENTION=1", "OLLAMA_KV_CACHE_TYPE=q8_0", "launchctl setenv"):
+            assert key in text, (path, key)
+    study = ROOT / "docs" / "estudos" / "hermes-desempenho.md"
+    assert study.exists()
+    index = (ROOT / "docs" / "estudos" / "README.md").read_text(encoding="utf-8")
+    assert "(hermes-desempenho.md)" in index

@@ -1,2 +1,5 @@
 - [Guard quirks](project_guard_quirks.md) — guard bloqueia .env.example, databricks://, cat .env, $…TOKEN e tokens glsa_/glc_
+- [Hermes+Ollama perf](reference_hermes_ollama_perf.md) — prompt-size, /v1 ignora num_ctx, lazy MCP pesa, KV híbrido
+- [Docker/Grafana Alloy](reference_docker_grafana_alloy.md) — extensão sem config própria; host.docker.internal chega ao loopback
 - [Hermes/MLflow internals](reference_hermes_mlflow_internals.md) — onde ver chaves do Hermes; juízes UI do MLflow 3.18 usam gateway:/
+- [Grafana alerting import](reference_grafana_alerting_import.md) — Cloud sem provisioning por arquivo; YAML Prometheus via /api/convert; traces = progresso do eval

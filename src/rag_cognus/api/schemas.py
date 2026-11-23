@@ -37,8 +37,9 @@ class PipelineIn(BaseModel):
 
 
 class Mascot(BaseModel):
-    """Ids da paleta fechada de `rag_cognus.mascot` (spec 008)."""
+    """Ids da paleta fechada de `rag_cognus.mascot` (specs 008 e 018)."""
 
+    figure: Literal[MASCOT_IDS["figure"]]
     skin: Literal[MASCOT_IDS["skin"]]
     headwear: Literal[MASCOT_IDS["headwear"]]
     headwear_color: Literal[MASCOT_IDS["headwear_color"]]
@@ -47,6 +48,9 @@ class Mascot(BaseModel):
 
 class MascotIn(Mascot):
     model_config = ConfigDict(extra="forbid")
+
+    # Opcional só na entrada (spec 018 AC-6): o front antigo envia o mascote sem `figure`.
+    figure: Literal[MASCOT_IDS["figure"]] = "masculino"
 
 
 class ProfileIn(BaseModel):
@@ -81,6 +85,7 @@ class MascotOption(BaseModel):
 
 
 class MascotPalette(BaseModel):
+    figure: list[MascotOption]
     skin: list[MascotOption]
     headwear: list[MascotOption]
     headwear_color: list[MascotOption]

@@ -1,4 +1,4 @@
-"""Paleta fechada do mascote do perfil (spec 008). Fonte única: o front lê da API."""
+"""Paleta fechada do mascote do perfil (specs 008 e 018). Fonte única: o front lê da API."""
 
 from __future__ import annotations
 
@@ -10,6 +10,10 @@ def _opts(*rows: tuple[str, str, str | None]) -> list[dict]:
 
 
 MASCOT_OPTIONS: dict[str, list[dict]] = {
+    "figure": _opts(  # spec 018: primeira chave; reinterpreta o desenho, sem cor própria
+        ("masculino", "Masculino", None),
+        ("feminino", "Feminino", None),
+    ),
     "skin": _opts(
         ("pele_1", "Clara", "#F6D5BF"),
         ("pele_2", "Clara média", "#EBBE97"),
@@ -47,6 +51,7 @@ MASCOT_OPTIONS: dict[str, list[dict]] = {
 }
 
 DEFAULT_MASCOT: dict = {
+    "figure": "masculino",
     "skin": "pele_3",
     "headwear": "gorro",
     "headwear_color": "petroleo",

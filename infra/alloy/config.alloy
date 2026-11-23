@@ -1,0 +1,32 @@
+// Grafana Alloy do rag_cognus (spec 017): scrape local → remote write no Grafana Cloud.
+// Credenciais só por variável de ambiente (vêm do .env via env_file do compose).
+// Nunca escreva URL de push com usuário, ID ou token neste arquivo.
+
+prometheus.scrape "rag_cognus_api" {
+  targets         = [{"__address__" = "host.docker.internal:8001"}]
+  job_name        = "rag-cognus-api"
+  metrics_path    = "/metrics"
+  scrape_interval = "15s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.scrape "rag_cognus_mlflow" {
+  targets         = [{"__address__" = "host.docker.internal:9105"}]
+  job_name        = "rag-cognus-mlflow"
+  metrics_path    = "/metrics"
+  scrape_interval = "15s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_PROM_REMOTE_WRITE_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_PROM_USER")
+      password = sys.env("GRAFANA_CLOUD_ACCESS_TOKEN")
+    }
+  }
+}

@@ -1,0 +1,88 @@
+# Regras de alerta do rag_cognus (spec 021), formato de regras do Prometheus.
+#
+# O Grafana Cloud NÃO lê arquivos de provisionamento. Este YAML é importado como regras
+# Grafana-managed (escolhendo o datasource Prometheus da stack na importação):
+#   UI:  Alerting → Alert rules → "Import to Grafana-managed rules" → Prometheus YAML file
+#   API: POST <GRAFANA_URL>/api/convert/prometheus/config/v1/rules/<pasta>
+#        com o header X-Grafana-Alerting-Datasource-UID: <uid do grafanacloud-*-prom>
+# Passo a passo em docs/estudos/mlflow-grafana.md. Não use `limit` nem `query` em
+# templates (a importação não aceita).
+groups:
+  - name: rag-cognus-avaliacao
+    interval: 1m
+    rules:
+      - alert: RagCognusMlflowFora
+        expr: max(rag_cognus_mlflow_up) == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: rag-cognus
+        annotations:
+          summary: MLflow local fora do ar há 5 min
+          description: >-
+            O exporter não conseguiu ler o MLflow em 127.0.0.1:5001. Rode
+            `rag-cognus mlflow-local` e confira `curl -s 127.0.0.1:9105/metrics`.
+
+      - alert: RagCognusAvaliacaoTravada
+        expr: max by (experiment, run_name) (rag_cognus_mlflow_run_elapsed_seconds) > 3600
+        for: 1m
+        labels:
+          severity: warning
+          service: rag-cognus
+        annotations:
+          summary: "Avaliação {{ $labels.run_name }} rodando há mais de 1 h"
+          description: >-
+            O run {{ $labels.run_name }} do experimento {{ $labels.experiment }} está RUNNING
+            há {{ $value | humanizeDuration }}. Confira o Ollama e o progresso no painel
+            "Progresso do run (traces / casos)".
+
+      - alert: RagCognusQualidadeBaixa
+        expr: max by (experiment) (rag_cognus_mlflow_run_metric{metric="quality_score_mean"}) < 3.5
+        for: 0m
+        labels:
+          severity: warning
+          service: rag-cognus
+        annotations:
+          summary: "quality_score_mean {{ $value }} < 3.5 no último run"
+          description: >-
+            O último run FINISHED do experimento {{ $labels.experiment }} teve
+            quality_score_mean = {{ $value }}.
+
+      - alert: RagCognusCitacaoBaixa
+        expr: >-
+          max by (experiment) (rag_cognus_mlflow_run_metric{metric="citation_integrity_mean"})
+          < 0.9
+        for: 0m
+        labels:
+          severity: warning
+          service: rag-cognus
+        annotations:
+          summary: "citation_integrity_mean {{ $value }} < 0.9 no último run"
+          description: >-
+            Respostas do último run de {{ $labels.experiment }} citam fontes fora do contexto
+            recuperado.
+
+      # runs_total é gauge (runs podem ser apagados): `delta`, não `increase`. O exporter
+      # publica 0 para FAILED, então a série existe antes da primeira falha.
+      - alert: RagCognusRunFalhou
+        expr: delta(rag_cognus_mlflow_runs_total{status="FAILED"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: rag-cognus
+        annotations:
+          summary: "Novo run FAILED em {{ $labels.experiment }}"
+          description: >-
+            O número de runs FAILED subiu nos últimos 10 min. Veja o run na UI do MLflow
+            (http://127.0.0.1:5001) e o log do `rag-cognus evaluate`.
+
+      - alert: RagCognusApiSemDados
+        expr: up{job="rag-cognus-api"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: rag-cognus
+        annotations:
+          summary: API do rag_cognus sem scrape há 5 min
+          description: >-
+            O Alloy não consegue ler 127.0.0.1:8001/metrics. Rode `rag-cognus api`.

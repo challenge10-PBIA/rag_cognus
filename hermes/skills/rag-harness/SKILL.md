@@ -7,9 +7,12 @@ description: Como verificar mudanças no rag_cognus (lint, formato, testes) e in
 
 | Situação | Comando |
 |---|---|
-| Durante a edição | `python hermes/harness/check.py --changed` |
-| Antes de concluir | `python hermes/harness/check.py` |
+| Durante a edição (a cada mudança) | `python hermes/harness/check.py --changed` |
 | Um teste específico | `python hermes/harness/check.py --no-lint tests/test_x.py -k nome` |
+| Antes de concluir (só no fim, uma vez) | `python hermes/harness/check.py` |
+
+Use o completo só no fim: ele roda a suíte toda (~40 s) e cada saída longa custa tokens e
+tempo no modelo local (spec 015). `--changed` roda o lint e só os testes ligados ao diff.
 
 Saída: uma linha `[PASS]/[FAIL] etapa` por etapa; em falha, as últimas 40 linhas.
 Última linha: `HARNESS OK` ou `HARNESS FALHOU`.

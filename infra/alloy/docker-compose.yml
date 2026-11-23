@@ -1,0 +1,31 @@
+# Alloy do rag_cognus (spec 017). Suba da raiz do repositório:
+#   docker compose --env-file .env -f infra/alloy/docker-compose.yml up -d
+# A API (8001) e o exporter do MLflow (9105) rodam no Mac, em 127.0.0.1; o Docker Desktop
+# encaminha host.docker.internal para o loopback do Mac (ver docs/estudos/mlflow-grafana.md).
+services:
+  alloy:
+    image: grafana/alloy:v1.9.0
+    container_name: rag-cognus-alloy
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+    # Só as 3 variáveis do remote write entram no container (nunca o .env inteiro).
+    # Vêm de `docker compose --env-file .env ...`; `:?` falha se alguma faltar.
+    environment:
+      GRAFANA_PROM_REMOTE_WRITE_URL: ${GRAFANA_PROM_REMOTE_WRITE_URL:?defina GRAFANA_PROM_REMOTE_WRITE_URL no .env e use --env-file .env}
+      GRAFANA_PROM_USER: ${GRAFANA_PROM_USER:?defina GRAFANA_PROM_USER no .env e use --env-file .env}
+      GRAFANA_CLOUD_ACCESS_TOKEN: ${GRAFANA_CLOUD_ACCESS_TOKEN:?defina GRAFANA_CLOUD_ACCESS_TOKEN no .env e use --env-file .env}
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      # UI do Alloy só no loopback; 12345 é da extensão Grafana do Docker Desktop.
+      - "127.0.0.1:12346:12345"
+    # No Docker Desktop host.docker.internal já existe (testado em 2026-11-18). Em Linux,
+    # descomente: extra_hosts: ["host.docker.internal:host-gateway"]
+    restart: unless-stopped
+
+volumes:
+  alloy-data:

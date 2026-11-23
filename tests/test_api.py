@@ -733,12 +733,14 @@ def test_habits_migration_is_idempotent(tmp_path):  # spec 006 AC-11
 
 # ---------- spec 008: mascote no perfil (substitui a foto) ----------
 DEFAULT_MASCOT = {
+    "figure": "masculino",
     "skin": "pele_3",
     "headwear": "gorro",
     "headwear_color": "petroleo",
     "shirt": "menta",
 }
 CUSTOM = {
+    "figure": "feminino",
     "skin": "pele_5",
     "headwear": "cabelo_cacheado",
     "headwear_color": "ruivo",
@@ -825,6 +827,94 @@ def test_mascot_options_endpoint(client):  # spec 008 AC-6
     assert got.json() == {"options": mascot.MASCOT_OPTIONS, "default": mascot.DEFAULT_MASCOT}
     schemas = client.app.openapi()["components"]["schemas"]
     assert "MascotOptions" in schemas
+
+
+# ---------- spec 018: figura feminina do mascote ----------
+OLD_MASCOT = {k: v for k, v in CUSTOM.items() if k != "figure"}  # corpo da spec 008
+
+
+def test_018_options_lists_figure_first(client):  # spec 018 AC-4
+    from rag_cognus import mascot
+
+    body = client.get("/v1/profile/mascot/options").json()
+    assert body == {"options": mascot.MASCOT_OPTIONS, "default": mascot.DEFAULT_MASCOT}
+    assert next(iter(body["options"])) == "figure"
+    assert body["default"]["figure"] == "masculino"
+    schemas = client.app.openapi()["components"]["schemas"]
+    assert "figure" in schemas["MascotPalette"]["properties"]
+    assert "figure" in schemas["MascotPalette"]["required"]
+    default_ref = schemas["MascotOptions"]["properties"]["default"]
+    assert default_ref == {"$ref": "#/components/schemas/Mascot"}
+
+
+def test_018_feminino_saved_and_read_everywhere(client):  # spec 018 AC-5
+    saved = put_profile(client, CUSTOM, name="Lia")
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["mascot"]["figure"] == "feminino"
+    assert client.get("/v1/profile").json()["mascot"] == CUSTOM
+    assert client.get("/v1/home").json()["profile"]["mascot"] == CUSTOM
+
+
+def test_018_missing_figure_defaults_to_masculino(client):  # spec 018 AC-6
+    saved = put_profile(client, OLD_MASCOT)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["mascot"] == OLD_MASCOT | {"figure": "masculino"}
+    assert client.get("/v1/profile").json()["mascot"] == OLD_MASCOT | {"figure": "masculino"}
+
+
+@pytest.mark.parametrize(
+    "mascot",
+    [
+        CUSTOM | {"figure": "outro"},
+        CUSTOM | {"figure": ""},
+        CUSTOM | {"figure": None},
+        CUSTOM | {"figura": "feminino"},
+        {k: v for k, v in CUSTOM.items() if k != "skin"},
+        {k: v for k, v in CUSTOM.items() if k != "headwear"},
+        {k: v for k, v in CUSTOM.items() if k != "headwear_color"},
+        {k: v for k, v in CUSTOM.items() if k != "shirt"},
+    ],
+)
+def test_018_invalid_figure_or_missing_field_is_422(client, mascot):  # spec 018 AC-6
+    put_profile(client, CUSTOM, name="Ana")
+    rejected = put_profile(client, mascot, name="Outro")
+    assert rejected.status_code == 422, rejected.text
+    assert client.get("/v1/profile").json() == {
+        "name": "Ana",
+        "daily_goal_minutes": 15,
+        "mascot": CUSTOM,
+    }
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        (json.dumps(OLD_MASCOT), OLD_MASCOT | {"figure": "masculino"}),
+        (None, DEFAULT_MASCOT),
+        ("{quebrado", DEFAULT_MASCOT),
+    ],
+)
+def test_018_old_profiles_read_without_rewrite(client, tmp_path, stored, expected):  # AC-7
+    put_profile(client, CUSTOM)
+    with sqlite3.connect(tmp_path / "cognus.db") as conn:
+        conn.execute("UPDATE profile SET mascot_json = ?", (stored,))
+    assert client.get("/v1/profile").json()["mascot"] == expected
+    assert client.get("/v1/home").json()["profile"]["mascot"] == expected
+    with sqlite3.connect(tmp_path / "cognus.db") as conn:
+        row = conn.execute("SELECT mascot_json FROM profile").fetchone()
+    assert row[0] == stored  # GET não reescreve a linha
+
+
+def test_018_openapi_figure_required_out_optional_in(client):  # spec 018 AC-8
+    schemas = client.app.openapi()["components"]["schemas"]
+    out, inp = schemas["Mascot"], schemas["MascotIn"]
+    assert "figure" in out["required"]
+    assert out["properties"]["figure"]["enum"] == ["masculino", "feminino"]
+    assert inp["properties"]["figure"]["enum"] == ["masculino", "feminino"]
+    assert inp["properties"]["figure"]["default"] == "masculino"
+    assert "figure" not in inp["required"]
+    assert set(inp["required"]) == {"skin", "headwear", "headwear_color", "shirt"}
+    assert inp.get("additionalProperties") is False
 
 
 OLD_PHOTO_ROUTE = "/v1/profile/avatar"  # rota da foto removida (spec 008)

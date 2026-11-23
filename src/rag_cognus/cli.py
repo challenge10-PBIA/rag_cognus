@@ -190,6 +190,11 @@ def main():
     api = sub.add_parser("api", help="Subir a API do front web (FastAPI, OpenAPI em /docs)")
     api.add_argument("--host", default="127.0.0.1")
     api.add_argument("--port", type=int, default=8001)
+    exporter = sub.add_parser(
+        "mlflow-exporter", help="Expor métricas do MLflow local em /metrics (Prometheus)"
+    )
+    exporter.add_argument("--host", default="127.0.0.1", help="0.0.0.0 expõe na rede local (evite)")
+    exporter.add_argument("--port", type=int, default=9105)
     sub.add_parser("sync-gold", help="Ler a Gold com OAuth e SQL Warehouse")
     ask = sub.add_parser("ask")
     ask.add_argument("query")
@@ -252,6 +257,12 @@ def main():
 
     if args.command == "api":
         serve_api(args.host, args.port)
+        return
+
+    if args.command == "mlflow-exporter":
+        from rag_cognus import mlflow_exporter
+
+        mlflow_exporter.serve(Settings.from_env(), args.host, args.port)
         return
 
     if args.command == "mlflow-check":
