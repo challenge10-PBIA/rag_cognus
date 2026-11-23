@@ -191,7 +191,7 @@ def tips(route: str, data: dict) -> list[dict]:
                     "daily_goal",
                 )
             )
-    elif route == "/metricas":
+    elif route in ("/progresso", "/metricas"):
         if not records:
             return [
                 _tip(
@@ -212,12 +212,34 @@ def tips(route: str, data: dict) -> list[dict]:
                 "weakest_pillar",
             )
         )
-    elif route == "/cognus":
+    elif route in ("/aprender", "/cognus"):
         out.append(
             _tip(
                 "cognus-how",
                 "Pergunte sobre comunicação e oratória: eu respondo com trechos da base de "
                 "conhecimento e mostro as fontes.",
+            )
+        )
+    elif route == "/treinar":
+        out.append(
+            _tip(
+                "train-hub",
+                "Escolha como treinar: sessão de fala, articulação dos sons ou preparar uma "
+                "fala para o seu público.",
+            )
+        )
+    elif route == "/treinar/articulacao":
+        out.append(
+            _tip(
+                "train-articulation",
+                "Veja o movimento da boca em 3D antes de gravar: fica mais fácil imitar o som.",
+            )
+        )
+    elif route == "/treinar/preparar":
+        out.append(
+            _tip(
+                "train-prepare",
+                "Adapte o texto ao seu público e depois grave a fala usando a versão nova.",
             )
         )
     elif route == "/perfil":

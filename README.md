@@ -143,35 +143,45 @@ rag-cognus api            # terminal 2
 - `RAG_ONLINE_EVAL=false` desliga a avaliação. Sem MLflow no ar a API segue funcionando; a
   avaliação só não é registrada (`mlflow_logged=false`).
 
-## Guia fonético e exercícios da Gold
+### Voz do mascote
 
-O guia web consome `GET /v1/phonetics/exercises` e o detalhe por ID. O catálogo não
-fica embutido no front: o repositório `medallion_cognus` mantém a entrada editorial,
-a normalização Bronze → Silver → Gold e a view `cognus.gold.vw_rag_exercicios`.
-As instruções de publicação ficam no README desse repositório.
+O avatar fala com voz híbrida ([specs/027-voz-do-avatar.md](specs/027-voz-do-avatar.md)):
 
-O snapshot local separado `.cache/phonetics.jsonl` usa o mesmo contrato e manifesto
-de integridade da Gold geral. A API valida seus registros antes de entregar o catálogo
-e une esses documentos ao índice RAG, preservando as fontes e o contexto editorial.
-Com o ambiente Python ativo e a conexão Databricks configurada, sincronize:
+- **Piper (padrão, local, offline):** pacote [`piper-tts`](https://github.com/OHF-Voice/piper1-gpl)
+  (licença **GPL-3.0-or-later**), instalado pelo extra opcional `voice`. Voz padrão
+  `pt_BR-faber-medium`; `pt_BR-cadu-medium` e `pt_BR-jeff-medium` também servem. As vozes
+  pt_BR foram treinadas com dados CC0 ([OHF-Voice/voice-datasets](https://github.com/OHF-Voice/voice-datasets)).
+- **ElevenLabs (opcional, só na apresentação):** usado quando há `ELEVENLABS_API_KEY`. O
+  plano gratuito é para uso não comercial e exige atribuição à ElevenLabs.
 
 ```bash
-python -m rag_cognus.phonetics_sync
-# Ou informe explicitamente um arquivo de configuração existente:
-python -m rag_cognus.phonetics_sync --env-file /caminho/para/.env
+python -m pip install -e '.[voice]'   # ~33 MB + onnxruntime
+rag-cognus voice-download             # baixa PIPER_VOICE para PIPER_DATA_DIR (~63 MB)
+rag-cognus voice-download --list      # vozes pt_BR disponíveis
+rag-cognus voice-download --voice pt_BR-cadu-medium --voice pt_BR-jeff-medium
 ```
 
-Depois de sincronizar uma nova versão, reinicie a API para reconstruir o índice.
-Catálogo ausente ou inválido retorna 503; não há substituição por exercícios genéricos.
+Se a voz já estiver baixada, o comando não baixa de novo (`--force` força) e, no fim, mostra
+qual provedor está ativo. Sem o extra instalado, sai com código 1 e o comando para instalar.
 
-Os alvos usam identificadores explícitos: o R breve `/ɾ/` difere do L `/l/` e das
-realizações regionais do R forte. A chave de animação pertence ao alvo, não à letra
-escrita. Os exercícios trazem passos, repetições, erros frequentes e autoavaliação.
-O conteúdo é educativo e editorial; as referências fonéticas não constituem validação
-clínica dos roteiros. A transcrição Whisper não diagnostica trocas de fonemas.
+O modo apresentação ([specs/028-modo-apresentacao-narrado.md](specs/028-modo-apresentacao-narrado.md))
+toca áudios pré-gerados, sem rede no dia. Revise o roteiro antes: com ElevenLabs, cada
+caractere gasta crédito.
 
-No feedback de uma sessão, exercícios multipilar não são repetidos em cartões diferentes:
-a seleção procura alternativas do mesmo pilar e devolve menos opções se elas se esgotarem.
+```bash
+rag-cognus voice-pregen               # lê ../frontend_UI/public/presentation/roteiro.json
+rag-cognus voice-pregen --only abertura --only encerramento   # só alguns passos
+rag-cognus voice-pregen --force --yes # refaz tudo sem perguntar
+```
+
+O comando mostra os passos, o total de caracteres e o provedor e pede `Gerar? [s/N]`. Grava
+`<id>.mp3` (ElevenLabs) ou `<id>.wav` (Piper) e um `manifest.json` com o `sha256` de
+provedor + voz + texto. Na próxima vez, pula os passos que não mudaram. Se algum passo
+falhar, lista os que faltaram, mantém os já gerados e sai com código ≠ 0.
+
+Variáveis (`TTS_PROVIDER`, `PIPER_VOICE`, `PIPER_DATA_DIR`, `PIPER_LENGTH_SCALE`,
+`ELEVENLABS_*`, `TTS_TIMEOUT`, `VOICE_CACHE_DIR`) em `.env.example`. O CI não instala o
+extra `voice`: os testes usam fakes e o Piper é importado só quando a voz é gerada.
 
 ## Agentes especializados
 

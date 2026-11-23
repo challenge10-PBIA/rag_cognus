@@ -3,3 +3,4 @@
 - [Docker/Grafana Alloy](reference_docker_grafana_alloy.md) — extensão sem config própria; host.docker.internal chega ao loopback
 - [Hermes/MLflow internals](reference_hermes_mlflow_internals.md) — onde ver chaves do Hermes; juízes UI do MLflow 3.18 usam gateway:/
 - [Grafana alerting import](reference_grafana_alerting_import.md) — Cloud sem provisioning por arquivo; YAML Prometheus via /api/convert; traces = progresso do eval
+- [venv drift](project_venv_drift.md) — .venv fora do lock; uv sync troca pandas/ruff; instalar novo pacote com uv pip install pinado

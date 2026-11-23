@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import socket
@@ -178,6 +179,138 @@ def serve_api(host: str, port: int):
     uvicorn.run(create_app(Services(settings)), host=host, port=port)
 
 
+VOICE_EXTRA_HINT = "Instale o extra de voz: pip install -e '.[voice]'"
+
+
+def _piper_installed() -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec("piper") is not None
+
+
+def voice_download(
+    settings: Settings,
+    voices: list[str] | None = None,
+    force: bool = False,
+    list_only: bool = False,
+    run=subprocess.run,
+    installed=_piper_installed,
+) -> int:
+    """Baixa vozes do Piper para `PIPER_DATA_DIR` com o módulo do próprio pacote (spec 027)."""
+    from rag_cognus import voice
+
+    if not installed():
+        print(VOICE_EXTRA_HINT)
+        return 1
+    module = [sys.executable, "-m", "piper.download_voices"]
+    if list_only:
+        result = run(module, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Não foi possível listar as vozes: {result.stderr.strip()}")
+            return 1
+        for line in result.stdout.splitlines():
+            if line.strip().startswith("pt_BR-"):
+                print(line.strip())
+        return 0
+    data_dir = Path(settings.piper_data_dir)
+    code = 0
+    for name in voices or [settings.piper_voice]:
+        model = data_dir / f"{name}.onnx"
+        if not force and model.is_file() and Path(f"{model}.json").is_file():
+            print(f"{name}: já existe em {data_dir} (use --force para baixar de novo)")
+            continue
+        print(f"{name}: baixando para {data_dir}…")
+        command = [*module, name, "--data-dir", str(data_dir)]
+        if force:
+            command.append("--force-redownload")
+        result = run(command)
+        if result.returncode != 0:
+            print(f"{name}: falha no download (código {result.returncode})")
+            code = 1
+    print(json.dumps(voice.voice_status(settings), ensure_ascii=False))
+    return code
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PRESENTATION_DIR = REPO_ROOT.parent / "frontend_UI" / "public" / "presentation"
+AUDIO_EXT = {"audio/mpeg": ".mp3", "audio/wav": ".wav"}
+
+
+def _pregen_key(settings: Settings, text: str) -> str:
+    """sha256 de provedor + voz + texto normalizado: muda quando o áudio precisa mudar."""
+    from rag_cognus import voice
+
+    provider = voice.provider_for(settings, "presentation")
+    voice_id = settings.piper_voice if provider == "piper" else settings.elevenlabs_voice_id
+    raw = f"{provider}|{voice_id}|{voice.normalize_text(text)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def voice_pregen(
+    settings: Settings,
+    roteiro: Path,
+    out: Path,
+    force: bool = False,
+    only: list[str] | None = None,
+    yes: bool = False,
+    synth=None,
+    ask=input,
+) -> int:
+    """Pré-gera o áudio do modo apresentação a partir do roteiro (spec 028 AC-2)."""
+    from rag_cognus import voice
+
+    synth = synth or voice.synthesize
+    if not Path(roteiro).is_file():
+        print(f"Roteiro não encontrado: {roteiro} (use --roteiro CAMINHO).")
+        return 2
+    steps = json.loads(Path(roteiro).read_text("utf-8"))["steps"]
+    ids = [step["id"] for step in steps]
+    unknown = [sid for sid in only or [] if sid not in ids]
+    if unknown:
+        print(f"Passos inexistentes no roteiro: {', '.join(unknown)}")
+        return 2
+    out = Path(out)
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text("utf-8")) if manifest_path.is_file() else {}
+    todo = []
+    for step in steps:
+        if only and step["id"] not in only:
+            continue
+        key = _pregen_key(settings, step["text"])
+        entry = manifest.get(step["id"], {})
+        fresh = entry.get("sha256") == key and (out / entry.get("file", "")).is_file()
+        if force or not fresh:
+            todo.append((step, key))
+    if not todo:
+        print("Nada a gerar: todos os passos estão atualizados (use --force para refazer).")
+        return 0
+    chars = sum(len(voice.normalize_text(step["text"])) for step, _ in todo)
+    provider = voice.provider_for(settings, "presentation")
+    print(f"{len(todo)} passo(s) a gerar, {chars} caracteres, provedor {provider}.")
+    print("Passos: " + ", ".join(step["id"] for step, _ in todo))
+    if not yes and ask("Gerar? [s/N] ").strip().lower() not in {"s", "sim"}:
+        print("Nada gerado.")
+        return 1
+    missing = []
+    for step, key in todo:
+        try:
+            result = synth(settings, step["text"], purpose="presentation")
+        except (voice.VoiceUnavailable, voice.InvalidText) as exc:
+            print(f"{step['id']}: {exc}")
+            missing.append(step["id"])
+            continue
+        name = step["id"] + AUDIO_EXT.get(result.media_type, ".mp3")
+        voice._write_atomic(out / name, result.audio)
+        manifest[step["id"]] = {"file": name, "sha256": key, "provider": result.provider}
+        data = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        voice._write_atomic(manifest_path, data.encode("utf-8"))
+        print(f"{step['id']}: {name} ({result.provider})")
+    if missing:
+        print(f"Faltaram: {', '.join(missing)}. Os demais foram mantidos; rode de novo.")
+        return 1
+    return 0
+
+
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser(description="Cognus: Gold → LangChain/Ollama → MLflow local")
@@ -195,6 +328,28 @@ def main():
     )
     exporter.add_argument("--host", default="127.0.0.1", help="0.0.0.0 expõe na rede local (evite)")
     exporter.add_argument("--port", type=int, default=9105)
+    vd = sub.add_parser("voice-download", help="Baixar a voz local do mascote (Piper)")
+    vd.add_argument(
+        "--voice", action="append", help="Voz, ex. pt_BR-cadu-medium (repetível; padrão do .env)"
+    )
+    vd.add_argument("--force", action="store_true", help="Baixar de novo mesmo se já existir")
+    vd.add_argument("--list", action="store_true", help="Listar as vozes pt_BR disponíveis")
+    pg = sub.add_parser("voice-pregen", help="Pré-gerar o áudio do modo apresentação")
+    pg.add_argument(
+        "--roteiro",
+        type=Path,
+        default=PRESENTATION_DIR / "roteiro.json",
+        help="roteiro.json (padrão: ../frontend_UI/public/presentation/roteiro.json)",
+    )
+    pg.add_argument(
+        "--out",
+        type=Path,
+        default=PRESENTATION_DIR / "audio",
+        help="Pasta dos áudios e do manifest.json (padrão: .../presentation/audio)",
+    )
+    pg.add_argument("--force", action="store_true", help="Refazer mesmo os passos inalterados")
+    pg.add_argument("--only", action="append", help="Gerar só este passo (id; repetível)")
+    pg.add_argument("--yes", action="store_true", help="Não pedir confirmação")
     sub.add_parser("sync-gold", help="Ler a Gold com OAuth e SQL Warehouse")
     ask = sub.add_parser("ask")
     ask.add_argument("query")
@@ -264,6 +419,25 @@ def main():
 
         mlflow_exporter.serve(Settings.from_env(), args.host, args.port)
         return
+
+    if args.command == "voice-download":
+        raise SystemExit(
+            voice_download(
+                Settings.from_env(), voices=args.voice, force=args.force, list_only=args.list
+            )
+        )
+
+    if args.command == "voice-pregen":
+        raise SystemExit(
+            voice_pregen(
+                Settings.from_env(),
+                args.roteiro,
+                args.out,
+                force=args.force,
+                only=args.only,
+                yes=args.yes,
+            )
+        )
 
     if args.command == "mlflow-check":
         try:

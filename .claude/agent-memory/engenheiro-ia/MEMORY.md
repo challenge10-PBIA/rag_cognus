@@ -4,3 +4,4 @@
 - [Juízes MLflow 3.18 + Ollama](mlflow_juizes_ollama.md) — URIs openai:/ e ollama:/, extração de inputs/contexto
 - [Teste de trace instável](flaky_pipeline_trace_contract.md) — test_pipeline_trace_contract falha às vezes no harness; rode de novo
 - [API temporária: SQLite isolado](api_temporaria_sqlite_isolado.md) — Store() interrompe avaliações pending; use data_dir próprio
+- [Voz: testes usam tmp_path](voz_testes_cache_real.md) — Settings() padrão aponta para .cache/voice e .cache/piper reais

@@ -199,6 +199,22 @@ def test_meta_and_profile(client):  # AC-10
     assert client.get("/v1/profile").json()["daily_goal_minutes"] == 15
 
 
+def test_pratica_plateia_mode_is_listed_and_accepted(client):  # spec 024 AC-1
+    expected = {
+        "id": "pratica_plateia",
+        "label": "Prática com Plateia",
+        "scenario": "Apresentação para um auditório que reage ao vivo",
+        "audience": "leigo",
+        "context": "palestra",
+        "minutes": 3,
+    }
+    assert expected in client.get("/v1/meta").json()["modes"]
+    assert expected in client.get("/v1/home").json()["modes"]
+    created = post_session(client, mode="pratica_plateia")
+    assert created.status_code == 201, created.text
+    assert created.json()["mode_label"] == "Prática com Plateia"
+
+
 def test_api_cors_allows_local_frontend_on_8001(tmp_path):
     app = create_app(Services(Settings(), data_dir=tmp_path / "app"))
     origins = next(
@@ -265,6 +281,14 @@ def test_home_progress_challenges_and_habits(client):  # AC-6, AC-7, AC-10
     assert next(c for c in home["challenges"] if c["id"] == challenge)["done"]
     progress = client.get("/v1/progress", params={"period": "week"}).json()
     assert len(progress["bars"]) == 7 and progress["index"] == result["index"]
+    # spec 029 AC-8: campos novos (perfil padrão: meta diária 10 min)
+    assert progress["bar_goal_minutes"] == 10.0
+    assert set(progress["pillars_previous"]) == set(progress["pillars"])
+    assert progress["pillars_change"] == dict.fromkeys(progress["pillars"])  # sem período anterior
+    assert progress["bars"][-1]["pillars"] == progress["pillars"]
+    assert all(b["pillars"] is None for b in progress["bars"][:-1])
+    month = client.get("/v1/progress", params={"period": "month"}).json()
+    assert month["bar_goal_minutes"] == 70.0
     assert client.get("/v1/progress", params={"period": "ano"}).status_code == 422
     habit = client.post(
         "/v1/habits",
@@ -958,8 +982,9 @@ def test_mascot_tips_and_topics_work_without_ollama_or_gold(tmp_path):  # spec 0
 
 def test_mascot_settings_silence_tips_and_persist(tmp_path, documents):  # spec 013 AC-10
     client = TestClient(create_app(FakeServices(tmp_path, documents)))
-    assert client.get("/v1/mascot/settings").json() == {"tips_enabled": True}
-    assert client.put("/v1/mascot/settings", json={"tips_enabled": False}).json() == {
+    defaults = {"tips_enabled": True, "voice_enabled": True, "voice_autoplay": False}
+    assert client.get("/v1/mascot/settings").json() == defaults
+    assert client.put("/v1/mascot/settings", json={"tips_enabled": False}).json() == defaults | {
         "tips_enabled": False
     }
     again = TestClient(create_app(FakeServices(tmp_path, documents)))  # mesmo banco
@@ -1097,3 +1122,122 @@ def test_mascot_explains_ask_evaluation(client):  # spec 013 AC-3, AC-4, AC-17
     ).json()
     labels = {f["label"] for f in body["facts"]}
     assert {"Qualidade geral", "Fundamentação nas fontes", "Integridade das citações"} <= labels
+
+
+# ---------- voz do avatar (spec 027) ----------
+def voice_services(tmp_path, documents=None, **kw):
+    settings = replace(
+        Settings(),
+        voice_cache_dir=str(tmp_path / "voice"),
+        piper_data_dir=str(tmp_path / "piper"),
+        **kw,
+    )
+    return FakeServices(tmp_path, documents, settings=settings)
+
+
+@pytest.fixture
+def fake_synth(monkeypatch):
+    from rag_cognus import voice
+
+    calls = []
+
+    def synth(settings, text, *, purpose="tip", facts=None, profile_name=None):
+        calls.append({"text": text, "purpose": purpose, "facts": facts, "name": profile_name})
+        if "180" in text:
+            raise voice.InvalidText(
+                "Esse texto cita números que não estão nos fatos; não vou falar."
+            )
+        if "falha" in text:
+            raise voice.VoiceUnavailable(
+                "Voz local não instalada: rode `rag-cognus voice-download`."
+            )
+        if "bug" in text:
+            raise RuntimeError("inesperado")
+        return voice.VoiceResult(b"RIFFwav", "audio/wav", "piper", len(calls) > 1)
+
+    monkeypatch.setattr(api_app.voice, "synthesize", synth)
+    return calls
+
+
+def test_voice_speak_returns_audio_with_headers(tmp_path, documents, fake_synth):  # 027 AC-1
+    client = TestClient(create_app(voice_services(tmp_path, documents)))
+    client.put("/v1/profile", json={"name": "Ana", "daily_goal_minutes": 10})
+    facts = [{"label": "Ritmo", "value": "140 ppm"}]
+    body = {"text": "Seu ritmo foi 140 ppm.", "purpose": "explain", "facts": facts}
+    response = client.post("/v1/voice/speak", json=body)
+    assert response.status_code == 200 and response.content == b"RIFFwav"
+    assert response.headers["content-type"] == "audio/wav"
+    assert response.headers["x-voice-cache"] == "miss"
+    assert response.headers["x-voice-provider"] == "piper"
+    assert fake_synth[0] == {
+        "text": "Seu ritmo foi 140 ppm.",
+        "purpose": "explain",
+        "facts": facts,
+        "name": "Ana",
+    }
+    again = client.post("/v1/voice/speak", json={"text": "Olá."})
+    assert again.headers["x-voice-cache"] == "hit" and fake_synth[1]["purpose"] == "tip"
+
+
+def test_voice_headers_are_exposed_to_the_front(tmp_path, documents, fake_synth):  # 027 AC-1
+    client = TestClient(create_app(voice_services(tmp_path, documents)))
+    response = client.post(
+        "/v1/voice/speak", json={"text": "Olá."}, headers={"Origin": "http://localhost:3000"}
+    )
+    exposed = response.headers["access-control-expose-headers"].lower()
+    assert "x-voice-cache" in exposed and "x-voice-provider" in exposed
+
+
+def test_voice_speak_forbidden_when_disabled(tmp_path, documents, fake_synth):  # 027 AC-4
+    client = TestClient(create_app(voice_services(tmp_path, documents)))
+    client.put("/v1/mascot/settings", json={"voice_enabled": False})
+    response = client.post("/v1/voice/speak", json={"text": "Olá."})
+    assert response.status_code == 403
+    assert response.json()["detail"] == "A voz do mascote está desligada no Perfil."
+    assert fake_synth == []
+    assert client.get("/v1/mascot/settings").json()["tips_enabled"] is True  # merge parcial
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"text": ""},
+        {"text": "Olá.", "purpose": "cantar"},
+        {"text": "Olá.", "extra": "dado do usuário"},
+        {"text": "Seu ritmo foi 180 ppm.", "purpose": "explain", "facts": []},
+    ],
+)
+def test_voice_speak_invalid_is_422(tmp_path, documents, fake_synth, body):  # 027 AC-1/AC-4
+    client = TestClient(create_app(voice_services(tmp_path, documents)))
+    assert client.post("/v1/voice/speak", json=body).status_code == 422
+
+
+@pytest.mark.parametrize("text", ["falha local", "bug interno"])
+def test_voice_speak_unavailable_is_503_never_500(tmp_path, documents, fake_synth, text):
+    client = TestClient(create_app(voice_services(tmp_path, documents)))  # 027 AC-3
+    response = client.post("/v1/voice/speak", json={"text": text})
+    assert response.status_code == 503
+    assert response.json()["detail"].startswith(("Voz local não instalada", "Voz indisponível"))
+
+
+def test_voice_speak_real_pipeline_without_model_is_503(tmp_path, documents):  # 027 AC-3
+    client = TestClient(create_app(voice_services(tmp_path, documents)))
+    response = client.post("/v1/voice/speak", json={"text": "Olá."})
+    assert response.status_code == 503
+    assert "rag-cognus voice-download" in response.json()["detail"]
+
+
+def test_health_reports_voice(tmp_path, monkeypatch):  # 027 AC-3
+    from rag_cognus import voice
+
+    monkeypatch.setattr(api_app.httpx, "get", lambda url, timeout: FakeResponse(True))
+    monkeypatch.setattr(voice, "_piper_installed", lambda: True)
+    services = voice_services(tmp_path, tts_presentation_provider="piper")
+    model = voice.piper_model_path(services.settings)
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"onnx")
+    model.with_name(model.name + ".json").write_text("{}")
+    health = TestClient(create_app(services)).get("/v1/health").json()
+    assert health["voice_available"] is True
+    assert health["voice_provider"] == "piper"
+    assert health["presentation_voice_provider"] == "piper"

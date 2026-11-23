@@ -50,7 +50,7 @@ MLflow **local** (`http://127.0.0.1:5001`; URIs `databricks://` são proibidas).
 - Não faça `git push`, `git reset --hard` nem commits sem pedido.
 
 ## Time multiagente
-Um **líder técnico** conversa com o usuário, escreve o plano e delega; três engenheiros
+Um **líder técnico** conversa com o usuário, escreve o plano e delega; quatro engenheiros
 executam no seu domínio e devolvem relatório no formato combinado.
 
 | Papel | Domínio |
@@ -59,6 +59,7 @@ executam no seu domínio e devolvem relatório no formato combinado.
 | Engenheiro de dados | `gold.py`, Databricks em `config.py`, `data/`, `notebooks/`, schema dos documentos |
 | Engenheiro de IA | `retrieval.py`, `chain.py`, `judges.py`, `metrics.py`, `evaluation.py`, `speech.py`, lógica do `chat_app.py` |
 | Engenheiro DevOps | `.github/`, `pyproject.toml`, `uv.lock`, `cli.py`, MLflow/Streamlit local, `hermes/`, `.claude/` |
+| Engenheiro de frontend | Repositório irmão `frontend_UI` (Next 16): `src/**`, `next.config.ts`, `package.json`, tipos gerados da API |
 
 - **Claude Code:** `.claude/agents/` (o líder é o agente principal da sessão).
 - **Hermes:** skill `rag-orchestrator` com `delegate_task`.

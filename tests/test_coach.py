@@ -104,18 +104,37 @@ def test_metrics_without_data_explains_empty_state():
 
 
 @pytest.mark.parametrize(
-    ("route", "tip_id"), [("/cognus", "cognus-how"), ("/perfil", "profile-mascot")]
+    ("route", "tip_id"),
+    [
+        ("/cognus", "cognus-how"),
+        ("/perfil", "profile-mascot"),
+        ("/aprender", "cognus-how"),
+        ("/progresso", "metrics-empty"),
+        ("/treinar", "train-hub"),
+        ("/treinar/articulacao", "train-articulation"),
+        ("/treinar/preparar", "train-prepare"),
+    ],
 )
 def test_static_route_tips(route, tip_id):
     assert coach.tips(route, data())[0]["id"] == tip_id
 
 
-def test_unknown_route_has_no_tips():
-    assert coach.tips("/qualquer", data()) == []
+@pytest.mark.parametrize(
+    ("new_route", "old_route"), [("/progresso", "/metricas"), ("/aprender", "/cognus")]
+)
+@pytest.mark.parametrize("records", [[], [record(clarity=40)]])
+def test_old_routes_are_aliases_of_new_routes(new_route, old_route, records):
+    assert coach.tips(new_route, data(records)) == coach.tips(old_route, data(records))
+
+
+@pytest.mark.parametrize("route", ["/qualquer", "/treinar/sessao", "/treinar/outra"])
+def test_unknown_route_has_no_tips(route):
+    assert coach.tips(route, data()) == []
 
 
 def test_at_most_two_tips():
-    for route in ("/", "/metricas", "/cognus", "/perfil"):
+    routes = ("/", "/metricas", "/cognus", "/perfil", "/progresso", "/aprender", "/treinar")
+    for route in routes + ("/treinar/articulacao", "/treinar/preparar"):
         assert len(coach.tips(route, data([record(days_ago=1), record()]))) <= 2
 
 

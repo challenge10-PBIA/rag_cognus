@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -19,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from rag_cognus import coach, exercises, feedback, mascot, progress, speech
+from rag_cognus import coach, exercises, feedback, mascot, progress, speech, voice
 from rag_cognus.agents.communication import CommunicationAgent
 from rag_cognus.agents.evidence import EvidenceAgent
 from rag_cognus.agents.pipeline import EvidenceToAudience
@@ -64,6 +65,13 @@ MODES = {
         "audience": "leigo",
         "context": "palestra",
         "minutes": 1,
+    },
+    "pratica_plateia": {
+        "label": "Prática com Plateia",
+        "scenario": "Apresentação para um auditório que reage ao vivo",
+        "audience": "leigo",
+        "context": "palestra",
+        "minutes": 3,
     },
 }
 NICHE_LABELS = {
@@ -559,7 +567,11 @@ def create_app(services: Services | None = None) -> FastAPI:
         "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8001,http://127.0.0.1:8001",
     )
     app.add_middleware(
-        CORSMiddleware, allow_origins=origins.split(","), allow_methods=["*"], allow_headers=["*"]
+        CORSMiddleware,
+        allow_origins=origins.split(","),
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-Voice-Cache", "X-Voice-Provider"],  # spec 027: o front lê
     )
     registry = api_metrics.create_registry()  # um por app (spec 016 AC-11)
     app.add_middleware(api_metrics.MetricsMiddleware, registry=registry)
@@ -608,6 +620,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             "chat_model": services.settings.chat_model,
             "whisper_model": services.settings.whisper_model,
             "mlflow": _mlflow_health(services.settings.tracking_uri),
+            **voice.voice_status(services.settings),
         }
 
     @app.get("/v1/meta", response_model=s.Meta)
@@ -723,7 +736,8 @@ def create_app(services: Services | None = None) -> FastAPI:
     def get_progress(period: str = Query("week", pattern="^(week|month|quarter)$")):
         today = date.today()
         records = store.records()
-        data = progress.summary(records, period, today)
+        goal = store.profile().get("daily_goal_minutes")
+        data = progress.summary(records, period, today, goal_minutes=goal)
         # Direcionamentos: pilares mais fracos das últimas sessões + fontes da Gold.
         guidance = [
             {k: v for k, v in g.items() if k != "query"}
@@ -868,8 +882,38 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     @app.put("/v1/mascot/settings", response_model=s.MascotSettings)
     def put_mascot_settings(body: s.MascotSettings):
-        store.set_state("mascot_settings", body.model_dump())
+        # Merge parcial: o front antigo só manda `tips_enabled` e não desliga a voz (spec 027).
+        store.set_state("mascot_settings", mascot_settings() | body.model_dump(exclude_unset=True))
         return mascot_settings()
+
+    @app.post(
+        "/v1/voice/speak",
+        response_class=Response,
+        responses={200: {"content": {"audio/wav": {}, "audio/mpeg": {}}}},
+    )
+    def voice_speak(body: s.SpeakIn):  # spec 027
+        if not mascot_settings()["voice_enabled"]:
+            raise HTTPException(403, "A voz do mascote está desligada no Perfil.")
+        try:
+            result = voice.synthesize(
+                services.settings,
+                body.text,
+                purpose=body.purpose,
+                facts=[f.model_dump() for f in body.facts],
+                profile_name=store.profile().get("name"),
+            )
+        except voice.InvalidText as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except voice.VoiceUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:  # nunca 500: o front cai para a voz do navegador
+            logging.getLogger(__name__).warning("voz falhou: %s", type(exc).__name__)
+            raise HTTPException(503, "Voz indisponível agora: erro inesperado na síntese.") from exc
+        headers = {
+            "X-Voice-Cache": "hit" if result.cache_hit else "miss",
+            "X-Voice-Provider": result.provider,
+        }
+        return Response(result.audio, media_type=result.media_type, headers=headers)
 
     @app.get("/v1/mascot/tips", response_model=s.MascotTips)
     def mascot_tips(route: str = Query("/", max_length=200), session_id: str | None = None):

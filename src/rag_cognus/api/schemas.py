@@ -120,6 +120,9 @@ class Meta(BaseModel):
     niches: list[Option]
 
 
+VoiceProvider = Literal["piper", "elevenlabs", "off"]
+
+
 class Health(BaseModel):
     ollama: bool
     gold_chunks: int | None
@@ -127,6 +130,10 @@ class Health(BaseModel):
     whisper_model: str
     # true/false = servidor MLflow local respondeu /health; null = sqlite:/file: (sem servidor)
     mlflow: bool | None = None
+    # Voz do avatar (spec 027): só configuração e modelo em disco, sem sintetizar.
+    voice_available: bool = False
+    voice_provider: VoiceProvider = "off"
+    presentation_voice_provider: VoiceProvider = "off"
 
 
 # ---------- RAG (spec 004) ----------
@@ -392,6 +399,7 @@ class Bar(BaseModel):
     minutes: float
     index: int | None
     calm: int | None
+    pillars: dict[str, int | None] | None = None  # spec 029 AC-8; None = barra sem sessões
 
 
 class Achievement(BaseModel):
@@ -422,6 +430,10 @@ class Progress(BaseModel):
     avg_daily_minutes: float
     anxiety_change_pct: float | None
     pillars: dict[str, int | None]
+    # Spec 029 AC-8: período anterior (mesma janela de index_change_pct) e variação em pontos.
+    pillars_previous: dict[str, int | None] = {}
+    pillars_change: dict[str, int | None] = {}
+    bar_goal_minutes: float | None = None  # meta diária × dias da barra (1 ou 7)
     streak_days: int
     achievements: list[Achievement]
     guidance: list[Guidance]
@@ -484,6 +496,19 @@ class Explanation(BaseModel):
 
 class MascotSettings(BaseModel):
     tips_enabled: bool = True
+    # Spec 027: Piper é local, então a voz vem ligada; falar sozinho só se a pessoa pedir.
+    voice_enabled: bool = True
+    voice_autoplay: bool = False
+
+
+class SpeakIn(BaseModel):
+    """Corpo de POST /v1/voice/speak; o limite de 600 vale após normalizar (voice.py)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=2000)
+    purpose: Literal["tip", "explain", "presentation"] = "tip"
+    facts: list[Fact] = []
 
 
 # ---------- onboarding (spec 014) ----------

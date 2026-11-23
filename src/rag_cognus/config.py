@@ -66,6 +66,23 @@ class Settings:
     judge_num_ctx: int | None = None  # só vale se o juiz usar outro modelo
     fast_num_ctx: int | None = None
     timeout: float = 300.0
+    # Voz do avatar (spec 027): Piper local no dia a dia, ElevenLabs opcional na apresentação.
+    tts_provider: str = "piper"
+    tts_presentation_provider: str = "elevenlabs"
+    piper_voice: str = "pt_BR-faber-medium"
+    piper_data_dir: str = ".cache/piper"
+    piper_length_scale: float = 1.1  # > 1 = mais lento e calmo
+    piper_noise_scale: float | None = None  # None = padrão do modelo/lib
+    piper_noise_w: float | None = None
+    elevenlabs_api_key: str = field(default="", repr=False)  # nunca aparece em logs/repr
+    elevenlabs_voice_id: str = ""
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_stability: float = 0.65
+    elevenlabs_similarity: float = 0.75
+    elevenlabs_style: float = 0.0
+    elevenlabs_speed: float = 0.95
+    tts_timeout: float = 20.0
+    voice_cache_dir: str = ".cache/voice"
 
     def __post_init__(self):
         qualified_name(self.gold_view)
@@ -74,6 +91,7 @@ class Settings:
         if self.num_ctx < 2048:
             raise ValueError("num_ctx (OLLAMA_NUM_CTX) deve ser pelo menos 2048.")
         _validate_llm(self)
+        _validate_voice(self)
         ensure_local_tracking(self.tracking_uri)
 
     @property
@@ -116,6 +134,7 @@ class Settings:
             online_eval=env_flag("RAG_ONLINE_EVAL", cls.online_eval),
             speech_pleonasm_llm=env_flag("SPEECH_PLEONASM_LLM", cls.speech_pleonasm_llm),
             **{name: value for name in LLM_ENV if (value := _env_llm(name)) is not None},
+            **_voice_from_env(),
         )
 
 
@@ -180,6 +199,64 @@ def _validate_llm(s: Settings) -> None:
             raise ValueError(f"{LLM_ENV[name]} deve ser pelo menos 2048.")
     if s.timeout <= 0:
         raise ValueError("OLLAMA_TIMEOUT deve ser maior que 0 (segundos).")
+
+
+TTS_PROVIDERS = ("piper", "elevenlabs", "off")
+# Campo do Settings -> (variável do .env, mínimo, máximo); vazio = padrão do Settings.
+VOICE_RANGES = {
+    "piper_length_scale": ("PIPER_LENGTH_SCALE", 0.5, 2.0),
+    "piper_noise_scale": ("PIPER_NOISE_SCALE", 0.0, 1.5),
+    "piper_noise_w": ("PIPER_NOISE_W", 0.0, 1.5),
+    "elevenlabs_stability": ("ELEVENLABS_STABILITY", 0.0, 1.0),
+    "elevenlabs_similarity": ("ELEVENLABS_SIMILARITY", 0.0, 1.0),
+    "elevenlabs_style": ("ELEVENLABS_STYLE", 0.0, 1.0),
+    # Faixa de `speed` a confirmar na doc do ElevenLabs (spec 027).
+    "elevenlabs_speed": ("ELEVENLABS_SPEED", 0.7, 1.2),
+}
+VOICE_TEXT_ENV = {
+    "tts_provider": "TTS_PROVIDER",
+    "tts_presentation_provider": "TTS_PRESENTATION_PROVIDER",
+    "piper_voice": "PIPER_VOICE",
+    "piper_data_dir": "PIPER_DATA_DIR",
+    "elevenlabs_api_key": "ELEVENLABS_API_KEY",
+    "elevenlabs_voice_id": "ELEVENLABS_VOICE_ID",
+    "elevenlabs_model": "ELEVENLABS_MODEL",
+    "voice_cache_dir": "VOICE_CACHE_DIR",
+}
+
+
+def _voice_from_env() -> dict:
+    values = {}
+    for name, env in VOICE_TEXT_ENV.items():
+        if raw := (os.getenv(env) or "").strip():
+            values[name] = raw.lower() if name.startswith("tts_") else raw
+    for name, env in {
+        **{k: v[0] for k, v in VOICE_RANGES.items()},
+        "tts_timeout": "TTS_TIMEOUT",
+    }.items():
+        if raw := (os.getenv(env) or "").strip():
+            try:
+                values[name] = float(raw)
+            except ValueError:
+                raise ValueError(f"{env} deve ser um número (recebido {raw!r}).") from None
+    return values
+
+
+def _validate_voice(s: Settings) -> None:
+    for name, env in (
+        ("tts_provider", "TTS_PROVIDER"),
+        ("tts_presentation_provider", "TTS_PRESENTATION_PROVIDER"),
+    ):
+        if getattr(s, name) not in TTS_PROVIDERS:
+            raise ValueError(
+                f"{env} deve ser piper, elevenlabs ou off (recebido {getattr(s, name)!r})."
+            )
+    for name, (env, low, high) in VOICE_RANGES.items():
+        value = getattr(s, name)
+        if value is not None and not low <= value <= high:
+            raise ValueError(f"{env} deve estar entre {low:g} e {high:g}.")
+    if s.tts_timeout <= 0:
+        raise ValueError("TTS_TIMEOUT deve ser maior que 0 (segundos).")
 
 
 _TRUE = {"1", "true", "yes", "sim", "on"}

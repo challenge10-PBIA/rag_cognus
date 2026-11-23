@@ -1,0 +1,2 @@
+- [CSS do dev com atraso](project_dev_css_stale.md) — globals.css editado com `next dev` ligado fica uma edição atrás; reiniciar limpando .next
+- [Sem automação de navegador](project_no_browser_automation.md) — sem Chrome/Playwright; safaridriver não sobe; ensaio vira checklist manual

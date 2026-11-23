@@ -4,7 +4,7 @@
 # Referência completa: cli-config.yaml.example do hermes-agent.
 
 model:
-  default: "qwen3.5:9b"
+  default: "eriktonon/deepseek-v4.1-flash-1017:9b"
   provider: "custom"                 # Ollama via endpoint OpenAI-compatível
   base_url: "http://127.0.0.1:11434/v1"
   # Janela de contexto (spec 015). O prompt fixo do Hermes ocupa ~13 mil tokens; 32768 deixa

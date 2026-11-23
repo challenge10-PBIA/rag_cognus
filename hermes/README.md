@@ -115,3 +115,8 @@ O `launchctl setenv` vale até o
 próximo login; para fixar, repita os comandos num LaunchAgent ou no seu `~/.zprofile`.
 Linux: as mesmas variáveis como `Environment=` no systemd do ollama e
 `sudo systemctl restart ollama`. No `.env` do app use `OLLAMA_NUM_CTX=32768` (o mesmo valor).
+
+
+![alt text](image.png)
+
+![alt text](image-1.png)

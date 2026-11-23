@@ -124,7 +124,9 @@ def pillar_means(sessions: list[dict]) -> dict:
     return {p: _mean(s["pillars"].get(p) for s in sessions) for p in PILLARS}
 
 
-def summary(sessions: list[dict], period: str, today: date) -> dict:
+def summary(
+    sessions: list[dict], period: str, today: date, goal_minutes: float | None = None
+) -> dict:
     if period not in PERIODS:
         raise ValueError("Período deve ser week, month ou quarter.")
     count, size = PERIODS[period]
@@ -140,6 +142,7 @@ def summary(sessions: list[dict], period: str, today: date) -> dict:
                 "minutes": round(sum(s["duration_seconds"] for s in bucket) / 60, 1),
                 "index": _round(_mean(s["index"] for s in bucket)),
                 "calm": _round(_mean(_calm(s) for s in bucket)),
+                "pillars": _rounded(pillar_means(bucket)) if bucket else None,  # spec 029 AC-8
             }
         )
     current = [s for s in sessions if start <= _day(s) <= today]
@@ -148,6 +151,7 @@ def summary(sessions: list[dict], period: str, today: date) -> dict:
     anxious = [s for s in current if s.get("anxiety_before") and s.get("anxiety_after")]
     anx_before = _mean(s["anxiety_before"] for s in anxious)
     anx_after = _mean(s["anxiety_after"] for s in anxious)
+    now_pillars, before_pillars = pillar_means(current), pillar_means(previous)
     return {
         "period": period,
         "bars": bars,
@@ -157,8 +161,19 @@ def summary(sessions: list[dict], period: str, today: date) -> dict:
         "sessions": len(current),
         "avg_daily_minutes": round(sum(s["duration_seconds"] for s in current) / 60 / span, 1),
         "anxiety_change_pct": _pct(anx_after, anx_before),
-        "pillars": {k: _round(v) for k, v in pillar_means(current).items()},
+        "pillars": _rounded(now_pillars),
+        # Spec 029 AC-8: mesma janela anterior de `index_change_pct`; variação em pontos.
+        "pillars_previous": _rounded(before_pillars),
+        "pillars_change": {
+            k: None if v is None or before_pillars[k] is None else round(v - before_pillars[k])
+            for k, v in now_pillars.items()
+        },
+        "bar_goal_minutes": float(goal_minutes * size) if goal_minutes else None,
     }
+
+
+def _rounded(means: dict) -> dict:
+    return {k: _round(v) for k, v in means.items()}
 
 
 def _round(value: float | None) -> int | None:
