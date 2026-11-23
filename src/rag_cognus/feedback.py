@@ -204,9 +204,21 @@ def _llm_choice(chat, target: dict, docs: list, exercises: list[dict]):
     return subs[:MAX_SUBS], ids
 
 
-def _exercises(exercises_fn: Callable, pillar: str) -> list[dict]:
+def _exercises(exercises_fn: Callable, pillar: str, used: set[str]) -> list[dict]:
     try:
-        return list(exercises_fn(pillar, limit=2))[:2]
+        # Consulte alternativas antes de limitar; um exercício multipilar não deve
+        # ocupar vários cartões da mesma sessão. Preserve a ordem editorial.
+        candidates = exercises_fn(pillar, limit=20)
+        selected, seen = [], set(used)
+        for exercise in candidates:
+            eid = exercise["id"]
+            if eid in seen:
+                continue
+            seen.add(eid)
+            selected.append(exercise)
+            if len(selected) == 2:
+                break
+        return selected
     except Exception:
         return []  # catálogo ausente/inválido não derruba a sessão (AC-9)
 
@@ -220,10 +232,11 @@ def build_guided(
 ) -> list[dict]:
     """Recomendações guiadas da sessão (spec 006, AC-1 a AC-9)."""
     recommendations = []
+    used_exercises: set[str] = set()
     for target in _targets(analysis, occurrences or []):
         pillar = target["pillar"]
         title, text = _title_text(target)
-        exercises = _exercises(exercises_fn, pillar)
+        exercises = _exercises(exercises_fn, pillar, used_exercises)
         docs, available = [], retriever is not None
         if retriever is not None:
             try:
@@ -238,6 +251,7 @@ def build_guided(
             exercises = picked or exercises
         if not subs:
             subs = _deterministic_subs(docs)
+        used_exercises.update(e["id"] for e in exercises)
         rid = f"{pillar}-{_slug(target['term'])}" if target["term"] else pillar
         recommendations.append(
             {

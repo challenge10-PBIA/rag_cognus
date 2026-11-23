@@ -143,6 +143,36 @@ rag-cognus api            # terminal 2
 - `RAG_ONLINE_EVAL=false` desliga a avaliação. Sem MLflow no ar a API segue funcionando; a
   avaliação só não é registrada (`mlflow_logged=false`).
 
+## Guia fonético e exercícios da Gold
+
+O guia web consome `GET /v1/phonetics/exercises` e o detalhe por ID. O catálogo não
+fica embutido no front: o repositório `medallion_cognus` mantém a entrada editorial,
+a normalização Bronze → Silver → Gold e a view `cognus.gold.vw_rag_exercicios`.
+As instruções de publicação ficam no README desse repositório.
+
+O snapshot local separado `.cache/phonetics.jsonl` usa o mesmo contrato e manifesto
+de integridade da Gold geral. A API valida seus registros antes de entregar o catálogo
+e une esses documentos ao índice RAG, preservando as fontes e o contexto editorial.
+Com o ambiente Python ativo e a conexão Databricks configurada, sincronize:
+
+```bash
+python -m rag_cognus.phonetics_sync
+# Ou informe explicitamente um arquivo de configuração existente:
+python -m rag_cognus.phonetics_sync --env-file /caminho/para/.env
+```
+
+Depois de sincronizar uma nova versão, reinicie a API para reconstruir o índice.
+Catálogo ausente ou inválido retorna 503; não há substituição por exercícios genéricos.
+
+Os alvos usam identificadores explícitos: o R breve `/ɾ/` difere do L `/l/` e das
+realizações regionais do R forte. A chave de animação pertence ao alvo, não à letra
+escrita. Os exercícios trazem passos, repetições, erros frequentes e autoavaliação.
+O conteúdo é educativo e editorial; as referências fonéticas não constituem validação
+clínica dos roteiros. A transcrição Whisper não diagnostica trocas de fonemas.
+
+No feedback de uma sessão, exercícios multipilar não são repetidos em cartões diferentes:
+a seleção procura alternativas do mesmo pilar e devolve menos opções se elas se esgotarem.
+
 ## Agentes especializados
 
 Dois agentes locais (Qwen no Ollama) apoiam o treino de apresentação. Cada execução vira um
