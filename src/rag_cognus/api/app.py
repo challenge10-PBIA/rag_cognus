@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from rag_cognus import coach, exercises, feedback, mascot, progress, speech, voice
+from rag_cognus import coach, exercises, feedback, mascot, progress, scenarios, speech, voice
 from rag_cognus.agents.communication import CommunicationAgent
 from rag_cognus.agents.evidence import EvidenceAgent
 from rag_cognus.agents.pipeline import EvidenceToAudience
@@ -29,6 +29,7 @@ from rag_cognus.api import metrics as api_metrics
 from rag_cognus.api import schemas as s
 from rag_cognus.api.store import Store
 from rag_cognus.config import Settings
+from rag_cognus.llm import trace_tags
 from rag_cognus.speech_analysis import PILLAR_NAMES, analyze_words, energy_contour
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -73,7 +74,16 @@ MODES = {
         "context": "palestra",
         "minutes": 3,
     },
+    # Spec 035: o briefing e o avaliador vêm de `scenarios.SCENARIOS`.
+    "pitch_venda": {
+        "label": "Pitch de Venda",
+        "scenario": "Convença um comprador em 1 minuto",
+        "audience": "executivo",
+        "context": "pitch",
+        "minutes": 1,
+    },
 }
+HOOK_SECONDS = 10  # spec 035: o gancho conta só nos primeiros 10 s
 NICHE_LABELS = {
     "apresentacoes_oratoria": "Apresentações e oratória",
     "assertividade_escuta": "Comunicação assertiva e escuta",
@@ -93,6 +103,19 @@ STRONG = {
 
 class GoldUnavailable(RuntimeError):
     pass
+
+
+CONFIDENCE_LEVEL = {"alta": "forte", "media": "moderada", "baixa": "fraca"}
+
+
+def evidence_level(abstained: bool, cited_chunk_ids: list[str]) -> str:
+    """Selo de evidência do /v1/ask por regra, nunca pelo LLM (spec 032 AC-3)."""
+    cited = 0 if abstained else len(set(cited_chunk_ids))
+    return "forte" if cited >= 3 else "moderada" if cited == 2 else "fraca"
+
+
+def _with_level(evidence: dict) -> dict:
+    return evidence | {"evidence_level": CONFIDENCE_LEVEL[evidence["synthesis"]["confidence"]]}
 
 
 # ---------- pleonasmos com LLM (spec 003, AC-9; desligado por padrão) ----------
@@ -224,6 +247,14 @@ class Services:
 
     def mascot_chat(self):
         """LLM das explicações do mascote (spec 013). None = ChatOllama padrão."""
+        return None
+
+    def small_talk_chat(self):
+        """LLM da conversa casual (spec 037). None = ChatOllama padrão (papel rápido)."""
+        return None
+
+    def scenario_chat(self):
+        """LLM do avaliador de cenário (spec 034). None = ChatOllama padrão (papel juiz)."""
         return None
 
     def pleonasm_checker(self):
@@ -367,8 +398,11 @@ def analyze_session(
     challenge_id: str | None,
     anxiety_before: int | None,
     anxiety_after: int | None,
+    conversation_id: str | None = None,
 ) -> dict:
+    """`conversation_id`: sessão do MLflow (spec 036 AC-3); vazio = a própria sessão."""
     settings = services.settings
+    session_id = uuid.uuid4().hex[:12]
     heard = speech.transcribe_words(services.transcriber(), wav)
     checker = services.pleonasm_checker() if settings.speech_pleonasm_llm else None
     analysis = analyze_words(heard["words"], pleonasm_checker=checker)
@@ -390,7 +424,11 @@ def analyze_session(
             minutes=min(config["minutes"], spoken),
         )
         agent = CommunicationAgent(settings, chat=services.communication_chat())
-        adapted = agent.run(heard["text"] or analysis["text"], profile)["adapted"]
+        adapted = agent.run(
+            heard["text"] or analysis["text"],
+            profile,
+            session_id=conversation_id or session_id,
+        )["adapted"]
         trace_id = mlflow.get_last_active_trace_id()
     except Exception:
         adapted = None  # sem LLM a análise acústica continua valendo (AC-8)
@@ -414,7 +452,7 @@ def analyze_session(
         )
     index = analysis["index"]
     return {
-        "session_id": uuid.uuid4().hex[:12],
+        "session_id": session_id,
         "created_at": _now(),
         "mode": mode,
         "mode_label": config["label"],
@@ -462,8 +500,22 @@ def _record(result: dict) -> dict:
     } | {"pillars": {n: p["score"] for n, p in result["pillars"].items()}}
 
 
-def _summary(result: dict) -> dict:
+def _badge(result: dict) -> dict | None:
+    """Selo do cenário no histórico; None em modos sem cenário e sessões antigas."""
+    brief = result.get("briefing")
+    if not brief:
+        return None
+    output = result.get("mode_result") or {}
     return {
+        "kind": "pitch_objecao" if "objecao_de" in brief else "pitch_venda",
+        "status": result.get("mode_result_status", "none"),
+        "verdict": output.get("verdict"),
+        "addressed": output.get("addressed"),
+    }
+
+
+def _summary(result: dict) -> dict:
+    return {"scenario": _badge(result)} | {
         k: result[k]
         for k in (
             "session_id",
@@ -478,7 +530,70 @@ def _summary(result: dict) -> dict:
 
 
 def _modes() -> list[dict]:
-    return [{"id": k, **v} for k, v in MODES.items()]
+    return [{"id": k, **v, "briefing": scenarios.briefing_fields(k)} for k, v in MODES.items()]
+
+
+def _scenario_error(exc: Exception) -> str:
+    if isinstance(exc, scenarios.ScenarioSkip):
+        return str(exc)
+    if isinstance(exc, ValueError):
+        return "O avaliador devolveu uma resposta inválida."
+    return "Avaliador indisponível: o LLM local não respondeu."
+
+
+def _scenario_metadata(settings: Settings) -> dict:
+    """Contexto imutável do trace do cenário (spec 036 AC-4): só config, nada de segredo."""
+    return {
+        "chat_model": settings.chat_model,
+        "judge_model": settings.judge,
+        "retriever": settings.backend,
+        "tracking": settings.tracking_uri,
+    }
+
+
+def run_scenario_evaluation(
+    services: Services, session_id: str, mode: str, briefing: dict, objection: str | None
+) -> None:
+    """Avaliador do cenário em segundo plano (spec 034 AC-4/AC-5/AC-8). Nunca levanta."""
+    store, settings = services.store, services.settings
+    result = store.session(session_id) or {}
+    words = result.get("transcript") or []
+    text = " ".join(w["word"].strip() for w in words)
+    hook = " ".join(w["word"].strip() for w in words if w["start"] < HOOK_SECONDS)
+    scenario = scenarios.SCENARIOS[mode]
+    try:
+        with mlflow.start_span(name=f"scenario_{mode}", span_type="CHAIN") as span:
+            preview = getattr(scenario, "request_preview", None)
+            mlflow.update_current_trace(
+                tags=trace_tags(settings, "scenario") | {"scenario": mode},
+                metadata=_scenario_metadata(settings),
+                # Spec 036 AC-3: a objeção entra na conversa do pitch original.
+                session_id=briefing.get("objecao_de") or session_id,
+                request_preview=preview(briefing, text, objection) if preview else text[:200],
+            )
+            span.set_inputs({"briefing": briefing, "objection": objection})
+            chat = services.scenario_chat()
+            if objection is not None:
+                output = scenario.evaluate_objection(settings, chat, text, objection)
+            else:
+                output = scenario.evaluate_pitch(settings, chat, text, hook, briefing)
+            span.set_outputs(output)
+            if hasattr(scenario, "response_preview"):
+                mlflow.update_current_trace(response_preview=scenario.response_preview(output))
+    except Exception as exc:
+        store.update_session(
+            session_id,
+            {
+                "mode_result": None,
+                "mode_result_status": "error",
+                "mode_result_error": _scenario_error(exc),
+            },
+        )
+        return
+    store.update_session(
+        session_id,
+        {"mode_result": output, "mode_result_status": "ready", "mode_result_error": None},
+    )
 
 
 def _mlflow_health(uri: str) -> bool | None:
@@ -663,26 +778,63 @@ def create_app(services: Services | None = None) -> FastAPI:
         anxiety_before: int | None = Form(None, ge=1, le=5),
         anxiety_after: int | None = Form(None, ge=1, le=5),
         exercise_id: str | None = Form(None, max_length=120),
+        briefing: str | None = Form(None, max_length=2000),
     ):
         if mode not in MODES:
             raise HTTPException(422, f"Modo desconhecido: {mode}.")
+        try:
+            brief = scenarios.validate_briefing(mode, briefing)  # spec 034 AC-2
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        objection = None
+        if brief and "objecao_de" in brief:  # spec 035 AC-6: rodada de resposta à objeção
+            origin = store.session(brief["objecao_de"])
+            if origin is None:
+                raise HTTPException(422, "Sessão de origem da objeção não encontrada.")
+            previous = origin.get("mode_result") or {}
+            if previous.get("kind") != "pitch_venda" or not previous.get("objection"):
+                raise HTTPException(422, "A sessão de origem não tem objeção para responder.")
+            objection = previous["objection"]
         selected = None
         if exercise_id is not None:
             catalog = phonetic_exercises()
             selected = next((item for item in catalog.exercises if item.id == exercise_id), None)
             if selected is None:
                 raise HTTPException(422, "Exercício fonético desconhecido no catálogo.")
-        wav = audio.file.read()
         try:
+            wav = speech.to_wav(audio.file.read())  # spec 032: M4A/AAC do app mobile
             result = analyze_session(
-                services, wav, mode, challenge_id, anxiety_before, anxiety_after
+                services,
+                wav,
+                mode,
+                challenge_id,
+                anxiety_before,
+                anxiety_after,
+                conversation_id=(brief or {}).get("objecao_de"),
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         result["exercise_id"] = selected.id if selected else None
         result["phoneme_id"] = selected.phonemeId if selected else None
+        result |= {
+            "briefing": brief,
+            "mode_result": None,
+            "mode_result_status": "pending" if brief is not None else "none",
+            "mode_result_error": None,
+        }
         store.save_session(result, _record(result), wav)
+        if brief is not None:
+            services.evaluation_runner().submit(
+                run_scenario_evaluation, services, result["session_id"], mode, brief, objection
+            )
         return result
+
+    @app.get("/v1/scenarios/{mode}/suggestions", response_model=s.ScenarioSuggestions)
+    def scenario_suggestions(mode: str):
+        scenario = scenarios.SCENARIOS.get(mode)
+        if scenario is None or not hasattr(scenario, "suggestions"):
+            raise HTTPException(404, "Este modo não tem sugestões.")
+        return {"suggestions": scenario.suggestions()}
 
     @app.get("/v1/sessions", response_model=list[s.SessionSummary])
     def list_sessions():
@@ -770,16 +922,24 @@ def create_app(services: Services | None = None) -> FastAPI:
     @app.post("/v1/speech/transcribe", response_model=s.Transcription)
     def transcribe(audio: UploadFile = File(...)):
         try:
-            return {"text": speech.transcribe(services.transcriber(), audio.file.read())}
+            wav = speech.to_wav(audio.file.read())  # spec 032
+            return {"text": speech.transcribe(services.transcriber(), wav)}
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
     @app.post("/v1/ask", response_model=s.AskOut)
     def ask(body: s.AskIn):
+        from rag_cognus import small_talk
         from rag_cognus.chain import RagPipeline
 
         settings = services.settings
-        pipeline = RagPipeline(gold(), settings, chat=services.rag_chat())
+        casual = small_talk.is_small_talk(body.query)  # spec 037: nem carrega a base
+        pipeline = RagPipeline(
+            None if casual else gold(),
+            settings,
+            chat=services.rag_chat(),
+            small_talk_chat=services.small_talk_chat(),
+        )
         start = time.perf_counter()
         ask_duration = registry.get(api_metrics.ASK_DURATION)
         try:
@@ -794,9 +954,10 @@ def create_app(services: Services | None = None) -> FastAPI:
         ask_duration.observe(latency, outcome="ok")
         trace_id = mlflow.get_last_active_trace_id()
         ask_id = uuid.uuid4().hex[:12]
-        status = "pending" if settings.online_eval else "disabled"
+        judged = settings.online_eval and result.get("kind") != "conversa"  # spec 037 AC-4
+        status = "pending" if judged else "disabled"
         store.create_evaluation(ask_id, _now(), status, settings.judge)
-        if settings.online_eval:
+        if judged:
             services.evaluation_runner().submit(
                 run_online_evaluation,
                 services,
@@ -812,6 +973,7 @@ def create_app(services: Services | None = None) -> FastAPI:
             "trace_id": trace_id,
             "ask_id": ask_id,
             "evaluation_status": store.evaluation(ask_id)["status"],
+            "evidence_level": evidence_level(result["abstained"], result["cited_chunk_ids"]),
         }
 
     @app.get("/v1/ask/{ask_id}/evaluation", response_model=s.AskEvaluation)
@@ -832,21 +994,22 @@ def create_app(services: Services | None = None) -> FastAPI:
     def communication_agent():
         return CommunicationAgent(services.settings, chat=services.communication_chat())
 
-    @app.post("/v1/agents/evidence")
+    @app.post("/v1/agents/evidence", response_model=s.EvidenceOut)
     def agent_evidence(body: s.EvidenceIn):
-        result = evidence_agent().run(body.topic, body.niche)
+        result = _with_level(evidence_agent().run(body.topic, body.niche))
         return result | {"trace_id": mlflow.get_last_active_trace_id()}
 
-    @app.post("/v1/agents/communication")
+    @app.post("/v1/agents/communication", response_model=s.CommunicationOut)
     def agent_communication(body: s.CommunicationIn):
         result = communication_agent().run(body.text, body.profile, body.source_claims)
         return result | {"trace_id": mlflow.get_last_active_trace_id()}
 
-    @app.post("/v1/agents/pipeline")
+    @app.post("/v1/agents/pipeline", response_model=s.PipelineOut)
     def agent_pipeline(body: s.PipelineIn):
         result = EvidenceToAudience(evidence_agent(), communication_agent()).run(
             body.topic, body.profile, body.niche
         )
+        result["evidence"] = _with_level(result["evidence"])
         return result | {"trace_id": mlflow.get_last_active_trace_id()}
 
     @app.post("/v1/feedback", status_code=204)

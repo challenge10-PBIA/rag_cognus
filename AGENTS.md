@@ -4,7 +4,7 @@ Contexto para agentes de código (Hermes Agent, Claude Code, Codex). Seja curto 
 
 ## Projeto
 RAG em Python 3.11+: lê a Gold `cognus.gold.vw_rag_conhecimento` (Databricks, só leitura),
-recupera com BM25/embeddings, responde com Qwen3.5 9B no Ollama e registra avaliações no
+recupera com BM25/embeddings, responde com `eriktonon/deepseek-v4.1-flash-1017:latest` (9B, base Qwen3.5) no Ollama e registra avaliações no
 MLflow **local** (`http://127.0.0.1:5001`; URIs `databricks://` são proibidas).
 
 | Módulo (`src/rag_cognus/`) | Papel | Teste |

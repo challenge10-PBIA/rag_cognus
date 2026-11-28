@@ -115,8 +115,11 @@ def test_run_params_show_llm_options(documents, isolated_tracking, tmp_path):  #
     params = mlflow.get_run(summary["run_id"]).data.params
     generator = json.loads(params["generator_options"])
     judge = json.loads(params["judge_options"])
-    assert generator["model"] == "qwen3.5:9b" and judge["model"] == "outro:7b"
-    for options, predict in ((generator, 900), (judge, 700)):
+    assert (
+        generator["model"] == "eriktonon/deepseek-v4.1-flash-1017:latest"
+        and judge["model"] == "outro:7b"
+    )
+    for options, predict in ((generator, 1800), (judge, 700)):
         assert options["temperature"] == 0 and options["seed"] == 42
         assert options["num_predict"] == predict and options["num_ctx"] == 16384
         assert "presence_penalty" in options and "repeat_penalty" in options
@@ -158,7 +161,7 @@ def test_ui_judge_uses_ollama_openai_endpoint(monkeypatch):  # 011 AC-11
     from rag_cognus.evaluation import ui_judge_env, ui_judge_model_uri
 
     settings = Settings(ollama_url="http://127.0.0.1:11434")
-    assert ui_judge_model_uri(settings) == "openai:/qwen3.5:9b"
+    assert ui_judge_model_uri(settings) == "openai:/eriktonon/deepseek-v4.1-flash-1017:latest"
     assert ui_judge_model_uri(Settings(judge_model="juiz:7b")) == "openai:/juiz:7b"
     for url in (
         "http://127.0.0.1:11434/",
@@ -172,9 +175,9 @@ def test_ui_judge_uses_ollama_openai_endpoint(monkeypatch):  # 011 AC-11
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     uri = get_default_model()
-    assert uri == "openai:/qwen3.5:9b"
+    assert uri == "openai:/eriktonon/deepseek-v4.1-flash-1017:latest"
     assert isinstance(get_adapter(uri, "x"), GatewayAdapter)
-    provider = _get_provider_instance("openai", "qwen3.5:9b")
+    provider = _get_provider_instance("openai", "eriktonon/deepseek-v4.1-flash-1017:latest")
     assert provider.get_endpoint_url("llm/v1/chat") == (
         "http://127.0.0.1:11434/v1/chat/completions"
     )
@@ -191,3 +194,74 @@ def test_failed_case_marks_trace_as_error(documents, isolated_tracking, tmp_path
     assert summary["metrics"]["error/mean"] == 1
     assert trace.info.state.value == "ERROR"
     assert trace.info.tags["error"] == "true"
+
+
+@pytest.fixture
+def autolog_off():
+    yield
+    mlflow.langchain.autolog(disable=True)
+
+
+def test_experiment_id_has_precedence_over_name(isolated_tracking, autolog_off):  # 036 AC-1
+    from rag_cognus.evaluation import configure_tracking
+
+    tests_id = mlflow.get_experiment_by_name("tests").experiment_id
+    settings = replace(
+        Settings(), tracking_uri=isolated_tracking, experiment="outro", experiment_id=tests_id
+    )
+    configure_tracking(settings)
+    assert mlflow.get_experiment_by_name("outro") is None  # o nome foi ignorado
+    with mlflow.start_span(name="probe"):
+        pass
+    trace = mlflow.get_trace(mlflow.get_last_active_trace_id(), flush=True)
+    assert trace.info.experiment_id == tests_id
+    configure_tracking(replace(settings, experiment="tests", experiment_id=""))  # vazio = nome
+    with mlflow.start_span(name="probe"):
+        pass
+    assert (
+        mlflow.get_trace(mlflow.get_last_active_trace_id(), flush=True).info.experiment_id
+        == tests_id
+    )
+
+
+def test_langchain_calls_nest_in_manual_span(isolated_tracking, autolog_off):  # 036 AC-2
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+    from langchain_core.prompts import ChatPromptTemplate
+
+    from rag_cognus.evaluation import configure_tracking
+
+    configure_tracking(replace(Settings(), tracking_uri=isolated_tracking, experiment="tests"))
+    chain = ChatPromptTemplate.from_messages([("human", "{q}")]) | FakeListChatModel(
+        responses=["oi"]
+    )
+    tests_id = mlflow.get_experiment_by_name("tests").experiment_id
+    mlflow.flush_trace_async_logging()
+    before = len(mlflow.search_traces(locations=[tests_id], return_type="list"))
+    with mlflow.start_span(name="manual", span_type="CHAIN"):
+        chain.invoke({"q": "olá"})
+    mlflow.flush_trace_async_logging()
+    after = mlflow.search_traces(locations=[tests_id], return_type="list")
+    assert len(after) == before + 1  # um trace só: o LangChain não abre trace novo
+    spans = mlflow.get_trace(mlflow.get_last_active_trace_id(), flush=True).data.spans
+    by_id = {s.span_id: s for s in spans}
+    roots = [s for s in spans if s.parent_id is None]
+    assert [s.name for s in roots] == ["manual"]
+    chat = next(s for s in spans if s.span_type == "CHAT_MODEL")
+    parent = by_id[chat.parent_id]
+    while parent.parent_id is not None:
+        parent = by_id[parent.parent_id]
+    assert parent.name == "manual"
+
+
+def test_judge_outside_span_opens_no_trace(isolated_tracking, autolog_off):  # 036 AC-2
+    from rag_cognus.evaluation import configure_tracking
+    from rag_cognus.judges import judge_response
+
+    configure_tracking(replace(Settings(), tracking_uri=isolated_tracking, experiment="tests"))
+    tests_id = mlflow.get_experiment_by_name("tests").experiment_id
+    mlflow.flush_trace_async_logging()
+    before = len(mlflow.search_traces(locations=[tests_id], return_type="list"))
+    judge = make_judge(Settings(), _fake(JUDGMENT))
+    judge_response(judge, "storytelling", {"response": "Use storytelling."})
+    mlflow.flush_trace_async_logging()
+    assert len(mlflow.search_traces(locations=[tests_id], return_type="list")) == before

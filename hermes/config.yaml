@@ -1,10 +1,10 @@
-# Perfil Hermes "ragdev" para o rag_cognus — Qwen3.5 9B local no Ollama.
+# Perfil Hermes "ragdev" para o rag_cognus — eriktonon/deepseek-v4.1-flash-1017:latest (base Qwen3.5 9B) local no Ollama.
 # Instalado por hermes/install.sh em ~/.hermes/profiles/ragdev/config.yaml
 # (__REPO__ é trocado pelo caminho absoluto do repositório).
 # Referência completa: cli-config.yaml.example do hermes-agent.
 
 model:
-  default: "eriktonon/deepseek-v4.1-flash-1017:9b"
+  default: "eriktonon/deepseek-v4.1-flash-1017:latest"
   provider: "custom"                 # Ollama via endpoint OpenAI-compatível
   base_url: "http://127.0.0.1:11434/v1"
   # Janela de contexto (spec 015). O prompt fixo do Hermes ocupa ~13 mil tokens; 32768 deixa

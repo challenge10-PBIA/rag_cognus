@@ -68,6 +68,17 @@ class Store:
             "UPDATE evaluations SET status = 'error', error = ? WHERE status = 'pending'",
             (INTERRUPTED,),
         )
+        # Spec 034 AC-5: avaliação de cenário pendente também nunca vai terminar.
+        for row in self._db.execute(
+            "SELECT id, result_json FROM sessions WHERE result_json LIKE ?",
+            ('%"mode_result_status": "pending"%',),
+        ).fetchall():
+            result = json.loads(row["result_json"])
+            result |= {"mode_result_status": "error", "mode_result_error": INTERRUPTED}
+            self._db.execute(
+                "UPDATE sessions SET result_json = ? WHERE id = ?",
+                (json.dumps(result, ensure_ascii=False), row["id"]),
+            )
         self._db.commit()
 
     def _query(self, sql: str, params=()) -> list[sqlite3.Row]:
@@ -130,6 +141,21 @@ class Store:
                 json.dumps(record, ensure_ascii=False),
             ),
         )
+
+    def update_session(self, session_id: str, changes: dict) -> None:
+        """Mescla `changes` no resultado salvo (cenário em segundo plano, spec 034 AC-4)."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT result_json FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if row is None:
+                return
+            result = json.loads(row["result_json"]) | changes
+            self._db.execute(
+                "UPDATE sessions SET result_json = ? WHERE id = ?",
+                (json.dumps(result, ensure_ascii=False), session_id),
+            )
+            self._db.commit()
 
     def session(self, session_id: str) -> dict | None:
         rows = self._query("SELECT result_json FROM sessions WHERE id = ?", (session_id,))

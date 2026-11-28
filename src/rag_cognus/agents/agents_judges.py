@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 
 from rag_cognus.config import Settings
 from rag_cognus.judges import Score
-from rag_cognus.llm import make_ollama
+from rag_cognus.llm import make_ollama, untraced_outside_span
 
 EVIDENCE_METRICS = {
     "coverage": "Cobertura do tema",
@@ -92,6 +92,7 @@ def _dumps(value) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+@untraced_outside_span
 def judge_evidence(judge, result: dict) -> EvidenceJudgment:
     evidence = [{"chunk_id": h["chunk_id"], "text": h["text"]} for h in result["evidence"]]
     raw = judge.invoke(
@@ -105,6 +106,7 @@ def judge_evidence(judge, result: dict) -> EvidenceJudgment:
     return EvidenceJudgment.model_validate(raw)
 
 
+@untraced_outside_span
 def judge_communication(judge, result: dict) -> CommunicationJudgment:
     raw = judge.invoke(
         {

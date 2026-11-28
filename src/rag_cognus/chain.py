@@ -7,6 +7,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from rag_cognus import small_talk
 from rag_cognus.config import Settings
 from rag_cognus.llm import llm_attributes, make_ollama, tag_llm_span, trace_tags
 from rag_cognus.retrieval import GoldRetriever
@@ -29,7 +30,10 @@ Retorne somente JSON: {{"resumo": "texto", "pontos": ["texto"], "recomendacao": 
 "cited_chunk_ids": ["ID exato"]}}.
 """
 EXCERPT_CHARS = 240
-RAG_NUM_PREDICT = 900  # teto padrão; OLLAMA_GENERATOR_NUM_PREDICT tem precedência
+# Teto padrão; OLLAMA_GENERATOR_NUM_PREDICT tem precedência. Respostas completas usam
+# ~800–1200 tokens; 900 cortava o JSON antes de `answerable` (spec 032 AC-7).
+RAG_NUM_PREDICT = 1800
+TRUNCATED = "A resposta do modelo veio incompleta: tente de novo."
 
 
 class Fonte(BaseModel):
@@ -100,9 +104,12 @@ def make_chat(settings: Settings):
 
 
 class RagPipeline:
-    def __init__(self, retriever: GoldRetriever, settings: Settings, chat=None):
+    def __init__(
+        self, retriever: GoldRetriever | None, settings: Settings, chat=None, small_talk_chat=None
+    ):
         self.retriever = retriever
         self.settings = settings
+        self.small_talk_chat = small_talk_chat  # spec 037: None = ChatOllama do papel rápido
         self._llm = llm_attributes(settings, "generator", num_predict=RAG_NUM_PREDICT)
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -130,7 +137,11 @@ class RagPipeline:
             ],
             ensure_ascii=False,
         )
-        answer = Answer.model_validate(self.chain.invoke({"query": query, "context": context}))
+        raw = self.chain.invoke({"query": query, "context": context})
+        if isinstance(raw, dict) and "answerable" not in raw:
+            # JsonOutputParser aceita JSON parcial: sem a última chave, a saída foi cortada.
+            raise ValueError(TRUNCATED)  # spec 032 AC-8
+        answer = Answer.model_validate(raw)
         available = {d.id for d in documents}
         if not set(answer.cited).issubset(available):
             raise ValueError("Modelo citou um ID ausente dos trechos recuperados.")
@@ -140,6 +151,16 @@ class RagPipeline:
 
     def predict(self, query: str, niche: str | None = None) -> dict:
         """Devolve o dict completo; o span raiz recebe só o que os juízes leem (spec 011)."""
+        if small_talk.is_small_talk(query):  # spec 037: conversa casual não vai à base
+            with mlflow.start_span(name="conversa", span_type="CHAIN") as span:
+                span.set_inputs({"query": query})
+                mlflow.update_current_trace(
+                    tags=trace_tags(self.settings, "conversa"), request_preview=query
+                )
+                text = small_talk.reply(self.settings, self.small_talk_chat, query)
+                span.set_outputs({"response": text})
+                mlflow.update_current_trace(response_preview=text)
+            return small_talk.result(text)
         with mlflow.start_span(name="rag_cognus", span_type="CHAIN") as span:
             span.set_inputs({"query": query, "niche": niche})
             mlflow.update_current_trace(
@@ -189,6 +210,7 @@ class RagPipeline:
             else {"resumo": ABSTENTION, "pontos": [], "recomendacao": None, "fontes": []}
         )
         return {
+            "kind": "rag",
             "response": _response_text(answer) if answer.answerable else ABSTENTION,
             "abstained": not answer.answerable,
             "cited_chunk_ids": cited,

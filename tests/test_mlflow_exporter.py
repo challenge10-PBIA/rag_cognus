@@ -10,7 +10,11 @@ import pytest
 from rag_cognus import mlflow_exporter as exp
 from rag_cognus.config import Settings
 
-PARAMS = {"backend": "bm25", "chat_model": "qwen3.5:9b", "judge_model": "qwen3.5:9b"}
+PARAMS = {
+    "backend": "bm25",
+    "chat_model": "eriktonon/deepseek-v4.1-flash-1017:latest",
+    "judge_model": "eriktonon/deepseek-v4.1-flash-1017:latest",
+}
 
 
 def run(status, start, end=None, metrics=None, params=None, name=None):

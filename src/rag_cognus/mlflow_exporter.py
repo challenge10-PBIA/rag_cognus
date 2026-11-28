@@ -41,7 +41,7 @@ def metric_label(name: str) -> str | None:
 
 
 def model_label(value: str | None) -> str:
-    """Nome de modelo (ex.: `qwen3.5:9b`) sem espaço, aspas nem quebra de linha."""
+    """Nome de modelo (ex.: `eriktonon/deepseek-v4.1-flash-1017:latest`) sem espaço, aspas nem quebra de linha."""
     if not value:
         return "unknown"
     clean = _NOT_MODEL.sub("_", str(value)).strip("_")[:LABEL_MAX]

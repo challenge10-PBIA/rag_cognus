@@ -24,7 +24,12 @@ ONLINE_TAG = "rag_cognus_online"
 
 def configure_tracking(settings: Settings):
     mlflow.set_tracking_uri(ensure_local_tracking(settings.tracking_uri))
-    mlflow.set_experiment(settings.experiment)
+    if settings.experiment_id:  # spec 036 AC-1: o ID vence o nome
+        mlflow.set_experiment(experiment_id=settings.experiment_id)
+    else:
+        mlflow.set_experiment(settings.experiment)
+    # Spec 036 AC-2: chamadas LangChain/ChatOllama viram filhos do span ativo (tokens inclusos).
+    mlflow.langchain.autolog(silent=True)
 
 
 def load_cases(path: str | Path) -> list[dict]:

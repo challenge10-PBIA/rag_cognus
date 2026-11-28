@@ -41,7 +41,7 @@ echo "     No app do Ollama (Settings) deixe Context length em 32k: o app sobres
 echo "     Reinicie: osascript -e 'quit app \"Ollama\"' && open -a Ollama"
 echo "     (Linux: as mesmas Environment= no systemd do ollama e sudo systemctl restart ollama)"
 echo "     No .env do app use OLLAMA_NUM_CTX=32768 (mesmo valor = sem recarregar o modelo)."
-echo "  2. ollama pull qwen3.5:9b"
+echo "  2. ollama pull eriktonon/deepseek-v4.1-flash-1017:latest"
 echo "  3. $PROFILE doctor"
 echo "  4. Painel:  .venv/bin/streamlit run hermes/monitor/app.py --server.port 8502"
 echo "  5. Agente:  cd $REPO && $PROFILE      (aceite os hooks na 1ª vez)"

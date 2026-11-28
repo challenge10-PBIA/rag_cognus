@@ -14,7 +14,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_cognus.config import Settings
-from rag_cognus.llm import make_ollama
+from rag_cognus.llm import make_ollama, untraced_outside_span
 
 # Nome técnico -> rótulo exibido no app. A ordem fixa define cor e posição nos gráficos.
 METRICS = {
@@ -80,6 +80,7 @@ def make_judge(settings: Settings, chat=None):
     return prompt | chat | JsonOutputParser()
 
 
+@untraced_outside_span
 def judge_response(judge, query: str, output: dict, expected_facts=None) -> ResponseJudgment:
     context = [
         {"chunk_id": h["chunk_id"], "text": h["text"]} for h in output.get("retrieved_context", [])

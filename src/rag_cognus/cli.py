@@ -375,7 +375,7 @@ def main():
     ev.add_argument("--dataset", default="data/evaluation/questions.jsonl")
     ev.add_argument("--backend", choices=["bm25", "dense"], default=None)
     ev.add_argument("--k", type=int, default=None)
-    ev.add_argument("--generate", action="store_true", help="Gerar respostas com o Qwen")
+    ev.add_argument("--generate", action="store_true", help="Gerar respostas com o LLM local")
     ev.add_argument("--judge", action="store_true", help="Notas de qualidade (requer --generate)")
     ev.add_argument("--limit", type=int)
     args = parser.parse_args()

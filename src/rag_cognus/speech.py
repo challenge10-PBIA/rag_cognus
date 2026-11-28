@@ -35,6 +35,40 @@ def load_transcriber(settings: Settings):
 WHISPER_RATE = 16000
 
 
+UNSUPPORTED = "Áudio inválido ou formato não suportado: envie WAV, M4A/AAC, WebM ou 3GP."
+
+
+def to_wav(data: bytes) -> bytes:
+    """Áudio comprimido (M4A/AAC, WebM, 3GP...) -> WAV PCM 16-bit mono 16 kHz (spec 032).
+
+    WAV passa intacto; vazio continua vazio para as mensagens de "Áudio vazio".
+    """
+    if not data or data[:4] == b"RIFF":
+        return data
+    try:
+        import av
+    except ModuleNotFoundError as exc:
+        raise ValueError(UNSUPPORTED) from exc
+    chunks = []
+    try:
+        with av.open(io.BytesIO(data)) as container:
+            if not container.streams.audio:
+                raise ValueError(UNSUPPORTED)
+            resampler = av.AudioResampler(format="s16", layout="mono", rate=WHISPER_RATE)
+            for frame in container.decode(audio=0):
+                chunks += [f.to_ndarray().tobytes() for f in resampler.resample(frame)]
+            chunks += [f.to_ndarray().tobytes() for f in resampler.resample(None)]
+    except av.FFmpegError as exc:
+        raise ValueError(UNSUPPORTED) from exc
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(WHISPER_RATE)
+        wav.writeframes(b"".join(chunks))
+    return buffer.getvalue()
+
+
 def wav_to_array(wav_bytes: bytes) -> np.ndarray:
     """WAV PCM 16-bit -> float32 mono 16 kHz, sem depender do decodificador `av`."""
     with wave.open(io.BytesIO(wav_bytes)) as wav:

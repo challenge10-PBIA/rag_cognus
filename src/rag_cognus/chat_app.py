@@ -418,7 +418,7 @@ def main():
         backend_label = st.selectbox("Busca", ["Por termos · BM25", "Por significado · embeddings"])
         k = st.slider("Quantidade de trechos", 1, 10, settings.top_k)
         generate = st.toggle(
-            "Gerar resposta com Qwen",
+            "Gerar resposta com o LLM local",
             value=True,
             help="Desative para inspecionar só a recuperação, sem esperar a geração.",
         )

@@ -107,7 +107,11 @@ class CommunicationAgent:
         return AdaptationDraft.model_validate(raw).model_dump()
 
     def run(
-        self, text: str, profile: AudienceProfile, source_claims: list[str] | None = None
+        self,
+        text: str,
+        profile: AudienceProfile,
+        source_claims: list[str] | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Devolve o dict completo; o span raiz recebe só o que os juízes leem (spec 011)."""
         with mlflow.start_span(name="communication_agent", span_type="AGENT") as span:
@@ -121,6 +125,8 @@ class CommunicationAgent:
             tags = trace_tags(self.settings, "communication")
             tags |= {"agent": "communication", "audience": profile.audience}
             mlflow.update_current_trace(tags=tags, request_preview=text)
+            if session_id:  # spec 036 AC-3: a conversa da sessão no MLflow
+                mlflow.update_current_trace(session_id=session_id)
             result = self._run(text, profile, source_claims)
             adapted = result["adapted"]
             span.set_outputs(

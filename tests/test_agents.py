@@ -295,7 +295,7 @@ def test_evidence_trace_contract(documents):  # 011 AC-6, AC-9, AC-10
     ):
         span = spans[name]
         assert span.get_attribute("role") == role
-        assert span.get_attribute("model") == "qwen3.5:9b"
+        assert span.get_attribute("model") == "eriktonon/deepseek-v4.1-flash-1017:latest"
         expected = ollama_options(Settings(), role, num_predict=predict)
         assert span.get_attribute("options") == expected
 

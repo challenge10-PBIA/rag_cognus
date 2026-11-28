@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from rag_cognus.agents.schemas import AudienceProfile
+from rag_cognus.agents.schemas import AdaptationDraft, AudienceProfile, SynthesisDraft
 from rag_cognus.coach import TOPICS as COACH_TOPICS
 from rag_cognus.mascot import IDS as MASCOT_IDS
 from rag_cognus.phonetics import PhoneticCatalog as PhoneticCatalog
@@ -103,6 +103,18 @@ class Option(BaseModel):
     description: str = ""
 
 
+class BriefingField(BaseModel):
+    """Campo do briefing de um modo com cenário (spec 034 AC-1)."""
+
+    id: str
+    label: str
+    kind: Literal["text", "choice"]
+    required: bool
+    placeholder: str | None = None
+    max_length: int | None = None
+    options: list[Option] = []
+
+
 class Mode(BaseModel):
     id: str
     label: str
@@ -110,6 +122,11 @@ class Mode(BaseModel):
     audience: str
     context: str
     minutes: float
+    briefing: list[BriefingField] = []
+
+
+class ScenarioSuggestions(BaseModel):
+    suggestions: list[str]
 
 
 class Meta(BaseModel):
@@ -162,7 +179,11 @@ class StructuredAnswer(BaseModel):
     fontes: list[StructuredSource] = []
 
 
+EvidenceLevel = Literal["forte", "moderada", "fraca"]  # spec 032: selo do app mobile
+
+
 class AskOut(BaseModel):
+    kind: Literal["rag", "conversa"] = "rag"  # spec 037: conversa casual não usa a base
     response: str
     abstained: bool
     cited_chunk_ids: list[str]
@@ -171,6 +192,53 @@ class AskOut(BaseModel):
     ask_id: str
     evaluation_status: EvaluationStatus
     structured: StructuredAnswer
+    evidence_level: EvidenceLevel  # regra: nº de trechos citados (spec 032 AC-3)
+
+
+# ---------- agentes (spec 001; contrato tipado na spec 032) ----------
+class EvidenceHit(BaseModel):
+    subquestion: str
+    chunk_id: str
+    title: str | None = None
+    audience: str | None = None
+    source_url: str | None = None
+    text: str
+
+
+class EvidenceOut(BaseModel):
+    topic: str
+    subquestions: list[str]
+    evidence: list[EvidenceHit]
+    synthesis: SynthesisDraft
+    discarded_claims: int
+    evidence_level: EvidenceLevel  # da confiança da síntese (spec 032 AC-2)
+    trace_id: str | None = None
+
+
+class TextMetrics(BaseModel):
+    words: int
+    sentences: int
+    avg_sentence_words: float
+    estimated_minutes: float
+    target_minutes: float | None = None
+    time_deviation_minutes: float | None = None
+    readability: float  # Flesch PT, 0 = muito difícil, 100 = muito fácil
+
+
+class CommunicationOut(BaseModel):
+    profile: AudienceProfile
+    original_text: str
+    adapted: AdaptationDraft
+    metrics: TextMetrics
+    original_metrics: TextMetrics
+    source_claims: list[str]
+    trace_id: str | None = None
+
+
+class PipelineOut(BaseModel):
+    evidence: EvidenceOut
+    communication: CommunicationOut
+    trace_id: str | None = None
 
 
 class JudgeScore(BaseModel):
@@ -204,6 +272,18 @@ class AskEvaluation(BaseModel):
     finished_at: str | None = None
 
 
+# Spec 032 AC-4: cor do pilar sem o app comparar textos. Labels são únicos entre pilares.
+PILLAR_STATUS = {
+    "ideal": "bom",
+    "equilibradas": "bom",
+    "limpo": "bom",
+    "alto": "bom",
+    "frequente": "critico",
+    "baixo": "critico",
+}
+PillarStatus = Literal["bom", "atencao", "critico"]
+
+
 class Pillar(BaseModel):
     title: str
     value: int | float | str
@@ -215,6 +295,11 @@ class Pillar(BaseModel):
     long_silences: int | None = None
     per_minute: float | None = None
     pleonasms: int | None = None
+
+    @computed_field
+    @property
+    def status(self) -> PillarStatus:
+        return PILLAR_STATUS.get(self.label, "atencao")
 
 
 class Pillars(BaseModel):
@@ -316,6 +401,41 @@ class Adapted(BaseModel):
     rehearsal_tips: list[str]
 
 
+class ChecklistItem(BaseModel):
+    id: Literal["gancho", "problema", "valor", "prova", "cta"]
+    label: str
+    present: bool
+    evidence: str | None
+
+
+class PitchResult(BaseModel):
+    """Comprador simulado do Pitch de venda (spec 035 AC-2)."""
+
+    kind: Literal["pitch_venda"]
+    buyer: str
+    product: str | None
+    verdict: Literal["compraria", "talvez", "nao_compraria"]
+    reason: str
+    checklist: list[ChecklistItem]
+    present_count: int
+    objection: str
+    simulated: Literal[True] = True
+
+
+class ObjectionResult(BaseModel):
+    """Rodada de resposta à objeção (spec 035 AC-6)."""
+
+    kind: Literal["pitch_objecao"]
+    objection: str
+    addressed: bool
+    reason: str
+    simulated: Literal[True] = True
+
+
+ModeResult = Annotated[PitchResult | ObjectionResult, Field(discriminator="kind")]
+ModeResultStatus = Literal["none", "pending", "ready", "error"]
+
+
 class SessionResult(BaseModel):
     exercise_id: str | None = None
     phoneme_id: str | None = None
@@ -340,6 +460,20 @@ class SessionResult(BaseModel):
     anxiety_before: int | None
     anxiety_after: int | None
     trace_id: str | None
+    # Spec 034: cenário do modo. Sessões antigas leem com os padrões (AC-6).
+    briefing: dict[str, str] | None = None
+    mode_result_status: ModeResultStatus = "none"
+    mode_result: ModeResult | None = None
+    mode_result_error: str | None = None
+
+
+class ScenarioBadge(BaseModel):
+    """Resumo do cenário para o histórico (selo de veredito ou de objeção)."""
+
+    kind: Literal["pitch_venda", "pitch_objecao"]
+    status: ModeResultStatus
+    verdict: Literal["compraria", "talvez", "nao_compraria"] | None = None
+    addressed: bool | None = None
 
 
 class SessionSummary(BaseModel):
@@ -350,6 +484,7 @@ class SessionSummary(BaseModel):
     duration_seconds: float
     index: int
     headline: str
+    scenario: ScenarioBadge | None = None  # spec 034: selo no histórico
 
 
 class Challenge(BaseModel):

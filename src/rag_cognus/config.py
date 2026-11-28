@@ -29,7 +29,7 @@ class Settings:
     token: str = field(default="", repr=False)  # nunca aparece em logs/repr
     warehouse_id: str = ""
     ollama_url: str = "http://127.0.0.1:11434"
-    chat_model: str = "qwen3.5:9b"
+    chat_model: str = "eriktonon/deepseek-v4.1-flash-1017:latest"
     embed_model: str = "embeddinggemma:latest"
     backend: str = "bm25"
     top_k: int = 5
@@ -43,6 +43,8 @@ class Settings:
     # Porta 5001: no macOS a 5000 é ocupada pelo AirPlay Receiver.
     tracking_uri: str = "http://127.0.0.1:5001"
     experiment: str = "rag-cognus"
+    # ID do experimento (spec 036): preenchido, tem precedência sobre o nome.
+    experiment_id: str = ""
     # Avaliação online de cada /v1/ask (spec 004): juiz em segundo plano → MLflow local.
     online_experiment: str = "rag-cognus-online"
     online_eval: bool = True
@@ -130,6 +132,7 @@ class Settings:
             fast_model=os.getenv("OLLAMA_FAST_MODEL", ""),
             tracking_uri=os.getenv("MLFLOW_TRACKING_URI") or cls.tracking_uri,
             experiment=os.getenv("MLFLOW_EXPERIMENT_NAME", cls.experiment),
+            experiment_id=os.getenv("MLFLOW_EXPERIMENT_ID", "").strip(),
             online_experiment=os.getenv("MLFLOW_ONLINE_EXPERIMENT") or cls.online_experiment,
             online_eval=env_flag("RAG_ONLINE_EVAL", cls.online_eval),
             speech_pleonasm_llm=env_flag("SPEECH_PLEONASM_LLM", cls.speech_pleonasm_llm),

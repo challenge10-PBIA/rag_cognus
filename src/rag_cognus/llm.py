@@ -4,12 +4,12 @@ Usar sempre o mesmo num_ctx por modelo evita que o Ollama recarregue o modelo en
 o juiz e os agentes. A saída é forçada a seguir o schema JSON do Pydantic.
 
 Spec 010: as opções são enviadas explicitamente. O que fica vazio no .env não é enviado e
-continua valendo o Modelfile do modelo (ex.: presence_penalty 1.5 no qwen3.5:9b).
+continua valendo o Modelfile do modelo (ex.: repeat_penalty 1.12 no deepseek-v4.1-flash).
 """
 
 from __future__ import annotations
 
-from functools import cache
+from functools import cache, wraps
 
 import mlflow
 from pydantic import BaseModel
@@ -92,6 +92,23 @@ def tag_llm_span(attributes: dict) -> None:
         span.set_attributes(attributes)
 
 
+def untraced_outside_span(fn):
+    """Juiz fora de um span manual não abre trace próprio com o autolog (spec 036 AC-2).
+
+    Dentro de um trace as chamadas LangChain seguem como filhas; fora dele, a amostragem 0
+    descarta o trace solto (ex.: scorers do `mlflow.genai.evaluate` e o juiz online).
+    """
+    hidden = mlflow.trace(fn, sampling_ratio_override=0.0)
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if mlflow.get_current_active_span() is None:
+            return hidden(*args, **kwargs)
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
 def trace_tags(settings: Settings, flow: str) -> dict:
     """Tags comuns dos traces (spec 011): os filtros da UI usam `flow`."""
     return {"flow": flow, "chat_model": settings.chat_model, "judge_model": settings.judge}
@@ -117,6 +134,19 @@ def _chat_class():
     return OptionsChatOllama
 
 
+def strict_format(schema: type[BaseModel]) -> dict:
+    """JSON schema do `format` com todos os campos obrigatórios, inclusive os aninhados.
+
+    Spec 033: o deepseek-v4.1-flash omitia campos com default (`fontes`, `cited_chunk_ids`)
+    e a resposta caía em "sem fontes". O Pydantic continua aceitando o JSON sem eles.
+    """
+    fmt = schema.model_json_schema()
+    for node in (fmt, *fmt.get("$defs", {}).values()):
+        if "properties" in node:
+            node["required"] = list(node["properties"])
+    return fmt
+
+
 def make_ollama(
     settings: Settings,
     schema: type[BaseModel],
@@ -130,8 +160,8 @@ def make_ollama(
         model=options["model"],
         base_url=settings.ollama_url,
         temperature=options["temperature"],
-        reasoning=options["think"],  # o modo de raciocínio do Qwen triplica o tempo
-        format=schema.model_json_schema(),
+        reasoning=options["think"],  # o raciocínio (think) do modelo base Qwen3.5 triplica o tempo
+        format=strict_format(schema),
         num_ctx=options["num_ctx"],
         num_predict=options["num_predict"],
         seed=options.get("seed"),

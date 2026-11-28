@@ -1,6 +1,6 @@
 ---
 name: engenheiro-ia
-description: Engenheiro de IA do rag_cognus. Use para recuperação (BM25/embeddings, top-k), cadeia de geração e citações com Qwen no Ollama, prompts, juízes LLM e métricas, avaliação no MLflow, transcrição de voz e a lógica do chat Streamlit.
+description: Engenheiro de IA do rag_cognus. Use para recuperação (BM25/embeddings, top-k), cadeia de geração e citações com o LLM local no Ollama (eriktonon/deepseek-v4.1-flash-1017:latest), prompts, juízes LLM e métricas, avaliação no MLflow, transcrição de voz e a lógica do chat Streamlit.
 disallowedTools: Agent
 model: inherit
 color: purple
@@ -13,7 +13,7 @@ informação, pare e diga exatamente o que falta.
 
 ## Domínio
 - `retrieval.py` (BM25 `rank-bm25`, embeddings `embeddinggemma`, `RAG_TOP_K`).
-- `chain.py` (prompt, chamada ao `qwen3.5:9b` via `langchain-ollama`, citações,
+- `chain.py` (prompt, chamada ao `eriktonon/deepseek-v4.1-flash-1017:latest` via `langchain-ollama`, citações,
   abstenção).
 - `judges.py`, `metrics.py`, `evaluation.py` (métricas 1–5, precision/recall@k, MRR,
   integridade de citações; registro no MLflow local).

@@ -46,7 +46,10 @@ def test_mlflow_local_passes_ollama_judge_env(monkeypatch, run_local):  # AC-1
     command, env = run_local()
     assert env["OPENAI_API_BASE"] == "http://127.0.0.1:11434/v1"
     assert env["OPENAI_API_KEY"] == "ollama"
-    assert env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"] == "openai:/qwen3.5:9b"
+    assert (
+        env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"]
+        == "openai:/eriktonon/deepseek-v4.1-flash-1017:latest"
+    )
     assert env["PATH"] == os.environ["PATH"]  # herda o resto do ambiente
     folder = run_local.data_dir
     assert command == [
@@ -76,21 +79,31 @@ def test_mlflow_local_keeps_existing_vars_and_hides_key(monkeypatch, capsys, run
     secret = "sk-valor-que-nao-pode-aparecer"
     monkeypatch.setenv("OPENAI_API_BASE", "http://outro-host:9999/v1")
     monkeypatch.setenv("OPENAI_API_KEY", secret)
-    monkeypatch.setenv("MLFLOW_GENAI_JUDGE_DEFAULT_MODEL", "ollama:/qwen3.5:9b")
+    monkeypatch.setenv(
+        "MLFLOW_GENAI_JUDGE_DEFAULT_MODEL", "ollama:/eriktonon/deepseek-v4.1-flash-1017:latest"
+    )
     _, env = run_local()
     assert env["OPENAI_API_BASE"] == "http://outro-host:9999/v1"
     assert env["OPENAI_API_KEY"] == secret
-    assert env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"] == "ollama:/qwen3.5:9b"
+    assert (
+        env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"]
+        == "ollama:/eriktonon/deepseek-v4.1-flash-1017:latest"
+    )
     out = capsys.readouterr()
     assert secret not in out.out + out.err
-    assert "ollama:/qwen3.5:9b" in out.out  # a linha mostra o juiz efetivo
+    assert (
+        "ollama:/eriktonon/deepseek-v4.1-flash-1017:latest" in out.out
+    )  # a linha mostra o juiz efetivo
 
 
 def test_mlflow_local_never_prints_default_key(capsys, run_local):  # AC-2
     run_local()
     out = capsys.readouterr().out
     assert "OPENAI_API_KEY=ollama" not in out
-    assert "openai:/qwen3.5:9b" in out and "http://127.0.0.1:11434/v1" in out
+    assert (
+        "openai:/eriktonon/deepseek-v4.1-flash-1017:latest" in out
+        and "http://127.0.0.1:11434/v1" in out
+    )
 
 
 @pytest.mark.parametrize(
@@ -108,7 +121,10 @@ def test_mlflow_local_starts_with_defaults_on_bad_settings(monkeypatch, capsys, 
     monkeypatch.setenv("RAG_ONLINE_EVAL", "talvez")
     _, env = run_local()
     assert env["OPENAI_API_BASE"] == "http://127.0.0.1:11434/v1"
-    assert env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"] == "openai:/qwen3.5:9b"
+    assert (
+        env["MLFLOW_GENAI_JUDGE_DEFAULT_MODEL"]
+        == "openai:/eriktonon/deepseek-v4.1-flash-1017:latest"
+    )
     assert "RAG_ONLINE_EVAL" in capsys.readouterr().out  # avisa em uma linha
 
 

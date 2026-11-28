@@ -21,6 +21,27 @@ def test_llm_settings_defaults(monkeypatch):  # AC-1
     assert settings.fast == settings.chat_model
 
 
+def test_default_chat_model_is_deepseek_flash(monkeypatch):  # spec 033 AC-1
+    monkeypatch.delenv("OLLAMA_CHAT_MODEL", raising=False)
+    assert Settings.from_env().chat_model == "eriktonon/deepseek-v4.1-flash-1017:latest"
+
+
+def test_format_requires_every_field_including_nested():  # spec 033 AC-2
+    class Item(BaseModel):
+        chunk_id: str
+        trecho: str = ""
+
+    class Out(BaseModel):
+        resumo: str
+        fontes: list[Item] = []
+        cited: list[str] = []
+
+    fmt = make_ollama(Settings(), Out).format
+    assert set(fmt["required"]) == {"resumo", "fontes", "cited"}
+    assert set(fmt["$defs"]["Item"]["required"]) == {"chunk_id", "trecho"}
+    assert Out.model_json_schema()["required"] == ["resumo"]  # o Pydantic fica intacto
+
+
 def test_rejects_tiny_context():  # AC-1
     with pytest.raises(ValueError, match="num_ctx"):
         Settings(num_ctx=1024)
@@ -217,7 +238,7 @@ def test_role_num_ctx_only_for_another_model(role, field):  # 010 AC-4
     from rag_cognus.llm import ollama_options
 
     ctx = {f"{field}_num_ctx": 8192}
-    for same in ("", "qwen3.5:9b"):
+    for same in ("", "eriktonon/deepseek-v4.1-flash-1017:latest"):
         settings = Settings(**ctx, **{f"{field}_model": same})
         assert ollama_options(settings, role)["num_ctx"] == 16384
     settings = Settings(**ctx, **{f"{field}_model": "outro:7b"})
@@ -286,13 +307,13 @@ def test_each_call_declares_its_role(monkeypatch, documents):  # 010 AC-5
 def test_num_predict_defaults_and_role_override(monkeypatch, documents):  # 010 AC-6
     calls = _record_roles(monkeypatch)
     _build_all(documents, Settings())
-    assert [n for _, _, n in calls] == [900, 200, 1200, 1500, 700, 600, 600, 300]
+    assert [n for _, _, n in calls] == [1800, 200, 1200, 1500, 700, 600, 600, 300]
     calls.clear()
     _build_all(documents, Settings(judge_num_predict=1000))
-    assert [n for _, _, n in calls] == [900, 200, 1200, 1500, 1000, 1000, 1000, 300]
+    assert [n for _, _, n in calls] == [1800, 200, 1200, 1500, 1000, 1000, 1000, 300]
     calls.clear()
     _build_all(documents, Settings(fast_num_predict=250))
-    assert [n for _, _, n in calls] == [900, 250, 1200, 1500, 700, 600, 600, 250]
+    assert [n for _, _, n in calls] == [1800, 250, 1200, 1500, 700, 600, 600, 250]
 
 
 def _load_env_example(monkeypatch):
@@ -331,3 +352,10 @@ def test_env_example_lists_llm_variables(clean_llm_env):  # 010 AC-9
     names = _load_env_example(clean_llm_env)
     assert set(LLM_VARS) <= set(names)
     assert "OLLAMA_FAST_MODEL" in names and not Settings.from_env().fast_model
+
+
+def test_experiment_id_from_env(monkeypatch):  # spec 036 AC-1
+    monkeypatch.delenv("MLFLOW_EXPERIMENT_ID", raising=False)
+    assert Settings.from_env().experiment_id == ""
+    monkeypatch.setenv("MLFLOW_EXPERIMENT_ID", " 2 ")
+    assert Settings.from_env().experiment_id == "2"

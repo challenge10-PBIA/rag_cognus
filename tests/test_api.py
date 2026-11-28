@@ -61,6 +61,20 @@ ADAPTED = {
 }
 
 
+PITCH_JUDGMENT = {  # spec 035: o FakeWhisper fala "Hoje mostro mostro … tipo resultados."
+    "verdict": "talvez",
+    "reason": "Faltou prova concreta.",
+    "checklist": [
+        {"id": "gancho", "present": True, "evidence": "Hoje mostro"},
+        {"id": "problema", "present": False, "evidence": ""},
+        {"id": "valor", "present": True, "evidence": "tipo resultados"},
+        {"id": "prova", "present": False, "evidence": ""},
+        {"id": "cta", "present": False, "evidence": ""},
+    ],
+    "objection": "Que resultados, exatamente?",
+}
+PITCH_BRIEFING = json.dumps({"produto": "App de gastos", "comprador": "cfo_cetico"})
+
 MASCOT_TEXT = {"text": "Ritmo é a velocidade da sua fala.", "mood": "neutro"}
 
 SCORES = dict(zip(METRICS, (5, 4, 5, 3, 4), strict=True))
@@ -145,6 +159,12 @@ class FakeServices(Services):
     def mascot_chat(self):
         return self.fakes.get("mascot") or self.chat(MASCOT_TEXT)
 
+    def small_talk_chat(self):
+        return self.fakes.get("small_talk") or self.chat({"reply": "Oi! Tudo certo?"})
+
+    def scenario_chat(self):
+        return self.fakes.get("scenario") or self.chat(PITCH_JUDGMENT)
+
     def synthesis_chat(self):
         return self.chat(
             {
@@ -207,6 +227,7 @@ def test_pratica_plateia_mode_is_listed_and_accepted(client):  # spec 024 AC-1
         "audience": "leigo",
         "context": "palestra",
         "minutes": 3,
+        "briefing": [],  # spec 034 AC-1: modo sem cenário
     }
     assert expected in client.get("/v1/meta").json()["modes"]
     assert expected in client.get("/v1/home").json()["modes"]
@@ -422,6 +443,8 @@ def test_ask_returns_before_judge_runs(tmp_path, documents):  # AC-1, AC-2
         "ask_id",
         "evaluation_status",
         "structured",
+        "evidence_level",  # spec 032 AC-3
+        "kind",  # spec 037
     }
     url = f"/v1/ask/{body['ask_id']}/evaluation"
     assert client.get(url).json()["status"] == "pending"
@@ -1241,3 +1264,332 @@ def test_health_reports_voice(tmp_path, monkeypatch):  # 027 AC-3
     assert health["voice_available"] is True
     assert health["voice_provider"] == "piper"
     assert health["presentation_voice_provider"] == "piper"
+
+
+# ---------- spec 032: contrato do app mobile ----------
+from rag_cognus.api import schemas as api_schemas  # noqa: E402
+from tests.test_speech import make_m4a  # noqa: E402
+
+
+def _response_ref(client, path):
+    spec = client.get("/openapi.json").json()
+    content = spec["paths"][path]["post"]["responses"]["200"]["content"]
+    return content["application/json"]["schema"]["$ref"].rsplit("/", 1)[-1]
+
+
+@pytest.mark.parametrize(
+    "path,model",
+    [
+        ("/v1/agents/evidence", "EvidenceOut"),
+        ("/v1/agents/communication", "CommunicationOut"),
+        ("/v1/agents/pipeline", "PipelineOut"),
+    ],
+)
+def test_agents_openapi_declares_outputs(client, path, model):  # spec 032 AC-1
+    assert _response_ref(client, path) == model
+
+
+def test_agents_return_typed_fields_and_evidence_level(client):  # spec 032 AC-1, AC-2
+    evidence = client.post("/v1/agents/evidence", json={"topic": "Como usar storytelling?"})
+    body = evidence.json()
+    assert evidence.status_code == 200 and body["evidence_level"] == "forte"
+    assert body["subquestions"] and body["evidence"][0]["chunk_id"] == "a"
+    adapted = client.post("/v1/agents/communication", json={"text": "Texto longo."}).json()
+    assert adapted["adapted"]["rehearsal_tips"] and "readability" in adapted["metrics"]
+    pipeline = client.post("/v1/agents/pipeline", json={"topic": "Como usar storytelling?"})
+    assert pipeline.json()["evidence"]["evidence_level"] == "forte"
+
+
+@pytest.mark.parametrize(
+    "abstained,cited,level",
+    [
+        (True, ["a", "b", "c"], "fraca"),
+        (False, [], "fraca"),
+        (False, ["a"], "fraca"),
+        (False, ["a", "b", "a"], "moderada"),
+        (False, ["a", "b", "c"], "forte"),
+    ],
+)
+def test_ask_evidence_level_rule(abstained, cited, level):  # spec 032 AC-3
+    assert api_app.evidence_level(abstained, cited) == level
+
+
+def test_ask_returns_evidence_level(client):  # spec 032 AC-3
+    answer = client.post("/v1/ask", json={"query": "storytelling"}).json()
+    assert answer["evidence_level"] == "fraca"  # o fake cita um trecho só
+
+
+@pytest.mark.parametrize(
+    "label,status",
+    [
+        ("ideal", "bom"),
+        ("equilibradas", "bom"),
+        ("limpo", "bom"),
+        ("alto", "bom"),
+        ("lento", "atencao"),
+        ("excessivas", "atencao"),
+        ("atencao", "atencao"),
+        ("medio", "atencao"),
+        ("frequente", "critico"),
+        ("baixo", "critico"),
+    ],
+)
+def test_pillar_status_from_label(label, status):  # spec 032 AC-4
+    pillar = api_schemas.Pillar(title="t", value=1, unit="u", score=50, label=label, detail="d")
+    assert pillar.model_dump()["status"] == status
+
+
+def test_session_pillars_expose_status(client):  # spec 032 AC-4
+    result = post_session(client).json()
+    assert {p["status"] for p in result["pillars"].values()} <= {"bom", "atencao", "critico"}
+    spec = client.get("/openapi.json").json()["components"]["schemas"]
+    assert "status" in spec["Pillar"]["properties"]
+
+
+def test_session_and_transcribe_accept_m4a(client):  # spec 032 AC-5
+    files = {"audio": ("fala.m4a", make_m4a(seconds=2.0), "audio/mp4")}
+    created = client.post("/v1/sessions", files=files, data={"mode": "daily_pitch"})
+    assert created.status_code == 201, created.text
+    audio = client.get(f"/v1/sessions/{created.json()['session_id']}/audio")
+    assert audio.content[:4] == b"RIFF"
+    files = {"audio": ("pergunta.m4a", make_m4a(), "audio/mp4")}
+    assert client.post("/v1/speech/transcribe", files=files).status_code == 200
+
+
+def test_session_rejects_non_audio_bytes(client):  # spec 032 AC-6
+    files = {"audio": ("x.m4a", b"lixo" * 100, "audio/mp4")}
+    response = client.post("/v1/sessions", files=files, data={"mode": "daily_pitch"})
+    assert response.status_code == 422 and "formato" in response.json()["detail"]
+
+
+# ---------- specs 034 (cenários) e 035 (Pitch de venda) ----------
+class ManualRunner:
+    """Guarda a avaliação do cenário para o teste ver o estado `pending` antes de rodar."""
+
+    def __init__(self):
+        self.jobs = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.jobs.append((fn, args, kwargs))
+
+    def run_all(self):
+        for fn, args, kwargs in self.jobs:
+            fn(*args, **kwargs)
+        self.jobs.clear()
+
+
+def test_meta_lists_pitch_briefing_and_suggestions(client):  # 034 AC-1, 035 AC-1
+    modes = {m["id"]: m for m in client.get("/v1/meta").json()["modes"]}
+    assert modes["daily_pitch"]["briefing"] == []
+    fields = {f["id"]: f for f in modes["pitch_venda"]["briefing"]}
+    assert fields["comprador"]["required"] and fields["comprador"]["kind"] == "choice"
+    assert fields["produto"]["max_length"] == 200
+    suggestions = client.get("/v1/scenarios/pitch_venda/suggestions").json()["suggestions"]
+    assert len(suggestions) == 5 and len(set(suggestions)) == 5
+    assert client.get("/v1/scenarios/espontanea/suggestions").status_code == 404
+
+
+def test_mode_without_scenario_has_no_mode_result(client):  # 034 AC-3
+    result = post_session(client).json()
+    assert (result["briefing"], result["mode_result"], result["mode_result_error"]) == (
+        None,
+        None,
+        None,
+    )
+    assert result["mode_result_status"] == "none"
+
+
+@pytest.mark.parametrize(
+    ("form", "message"),
+    [
+        ({"briefing": "{nao json"}, "JSON"),
+        ({}, "comprador"),
+        ({"briefing": '{"comprador": "rei"}'}, "Opção"),
+        ({"briefing": '{"comprador": "investidor", "objecao_de": "nao-existe"}'}, "origem"),
+    ],
+)
+def test_pitch_session_rejects_bad_briefing(client, form, message):  # 034 AC-2, 035 AC-6
+    response = post_session(client, mode="pitch_venda", **form)
+    assert response.status_code == 422 and message in response.json()["detail"]
+
+
+def test_briefing_on_mode_without_scenario_is_rejected(client):  # 034 AC-2
+    response = post_session(client, briefing=PITCH_BRIEFING)
+    assert response.status_code == 422 and "não usa briefing" in response.json()["detail"]
+
+
+def test_pitch_session_is_pending_then_ready(tmp_path, documents):  # 034 AC-4/AC-6, 035 AC-2
+    runner = ManualRunner()
+    client = TestClient(create_app(FakeServices(tmp_path, documents, runner=runner)))
+    created = post_session(client, mode="pitch_venda", briefing=PITCH_BRIEFING)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["mode_result_status"] == "pending" and body["mode_result"] is None
+    assert body["briefing"] == {"produto": "App de gastos", "comprador": "cfo_cetico"}
+    assert body["pillars"]["fillers"]["counts"] == {"tipo": 1}  # análise de fala intacta
+    sid = body["session_id"]
+    assert client.get(f"/v1/sessions/{sid}").json()["mode_result_status"] == "pending"
+    runner.run_all()
+    saved = client.get(f"/v1/sessions/{sid}").json()
+    assert saved["mode_result_status"] == "ready"
+    result = saved["mode_result"]
+    assert result["kind"] == "pitch_venda" and result["buyer"] == "Diretor financeiro cético"
+    assert result["present_count"] == 2 and result["verdict"] == "talvez"
+    assert saved["pillars"] == body["pillars"]
+
+
+def test_pitch_evaluator_failure_keeps_session(tmp_path, documents):  # 034 AC-5
+    fakes = {"scenario": RunnableLambda(boom)}
+    client = TestClient(create_app(FakeServices(tmp_path, documents, **fakes)))
+    created = post_session(client, mode="pitch_venda", briefing=PITCH_BRIEFING)
+    assert created.status_code == 201
+    saved = client.get(f"/v1/sessions/{created.json()['session_id']}").json()
+    assert saved["mode_result_status"] == "error" and saved["mode_result"] is None
+    assert saved["mode_result_error"] == "Avaliador indisponível: o LLM local não respondeu."
+    assert saved["index"] > 0
+
+
+def test_pending_scenario_from_previous_process_becomes_error(tmp_path, documents):  # 034 AC-5
+    runner = ManualRunner()
+    client = TestClient(create_app(FakeServices(tmp_path, documents, runner=runner)))
+    sid = post_session(client, mode="pitch_venda", briefing=PITCH_BRIEFING).json()["session_id"]
+    restarted = TestClient(create_app(FakeServices(tmp_path, documents)))
+    saved = restarted.get(f"/v1/sessions/{sid}").json()
+    assert saved["mode_result_status"] == "error"
+    assert saved["mode_result_error"] == "Avaliação interrompida."
+
+
+def test_objection_round_uses_origin_objection(tmp_path, documents):  # 035 AC-6
+    answered = {"addressed": True, "reason": "Citou números."}
+    services = FakeServices(tmp_path, documents)
+    client = TestClient(create_app(services))
+    origin = post_session(client, mode="pitch_venda", briefing=PITCH_BRIEFING).json()
+    services.fakes["scenario"] = fake(answered)
+    briefing = json.dumps(
+        {"produto": "App de gastos", "comprador": "cfo_cetico", "objecao_de": origin["session_id"]}
+    )
+    created = post_session(client, mode="pitch_venda", briefing=briefing)
+    assert created.status_code == 201, created.text
+    saved = client.get(f"/v1/sessions/{created.json()['session_id']}").json()
+    assert saved["mode_result"] == {
+        "kind": "pitch_objecao",
+        "objection": "Que resultados, exatamente?",
+        "addressed": True,
+        "reason": "Citou números.",
+        "simulated": True,
+    }
+
+
+def test_objection_round_needs_origin_with_objection(client):  # 035 AC-6
+    plain = post_session(client).json()["session_id"]
+    briefing = json.dumps({"comprador": "investidor", "objecao_de": plain})
+    response = post_session(client, mode="pitch_venda", briefing=briefing)
+    assert response.status_code == 422 and "objeção" in response.json()["detail"]
+
+
+def test_old_session_reads_without_scenario_fields(client, tmp_path):  # 034 AC-6
+    sid = post_session(client).json()["session_id"]
+    db = sqlite3.connect(tmp_path / "cognus.db")
+    row = json.loads(db.execute("SELECT result_json FROM sessions").fetchone()[0])
+    for key in ("briefing", "mode_result", "mode_result_status", "mode_result_error"):
+        row.pop(key, None)
+    db.execute("UPDATE sessions SET result_json = ?", (json.dumps(row),))
+    db.commit()
+    saved = client.get(f"/v1/sessions/{sid}").json()
+    assert saved["mode_result_status"] == "none" and saved["briefing"] is None
+
+
+def test_openapi_mode_result_is_discriminated(client):  # 034 AC-7
+    spec = client.get("/openapi.json").json()
+    field = spec["components"]["schemas"]["SessionResult"]["properties"]["mode_result"]
+    union = next(option for option in field["anyOf"] if "oneOf" in option)
+    assert union["discriminator"]["propertyName"] == "kind"
+    refs = {item["$ref"].rsplit("/", 1)[1] for item in union["oneOf"]}
+    assert refs == {"PitchResult", "ObjectionResult"}
+
+
+def test_scenario_evaluation_is_traced(tmp_path, documents, monkeypatch):  # 034 AC-8
+    tags = []
+    monkeypatch.setattr(api_app.mlflow, "update_current_trace", lambda **kw: tags.append(kw))
+    client = TestClient(create_app(FakeServices(tmp_path, documents)))
+    post_session(client, mode="pitch_venda", briefing=PITCH_BRIEFING)
+    merged = {k: v for call in tags for k, v in (call.get("tags") or {}).items()}
+    assert merged["flow"] == "scenario" and merged["scenario"] == "pitch_venda"
+
+
+def test_session_list_shows_scenario_outcome(tmp_path, documents):  # 034 AC-6 (histórico)
+    services = FakeServices(tmp_path, documents)
+    client = TestClient(create_app(services))
+    plain = post_session(client).json()["session_id"]
+    origin = post_session(client, mode="pitch_venda", briefing=PITCH_BRIEFING).json()
+    services.fakes["scenario"] = fake({"addressed": False, "reason": "Fugiu da pergunta."})
+    briefing = {"comprador": "cfo_cetico", "objecao_de": origin["session_id"]}
+    for _ in range(2):  # várias rodadas de objeção contra o mesmo pitch
+        created = post_session(client, mode="pitch_venda", briefing=json.dumps(briefing))
+        assert created.status_code == 201, created.text
+    rows = {r["session_id"]: r for r in client.get("/v1/sessions").json()}
+    assert rows[plain]["scenario"] is None
+    assert rows[origin["session_id"]]["scenario"] == {
+        "kind": "pitch_venda",
+        "status": "ready",
+        "verdict": "talvez",
+        "addressed": None,
+    }
+    objections = [r for r in rows.values() if (r["scenario"] or {}).get("kind") == "pitch_objecao"]
+    assert len(objections) == 2 and all(r["scenario"]["addressed"] is False for r in objections)
+
+
+def _session_meta(trace):
+    return trace.info.trace_metadata.get("mlflow.trace.session")
+
+
+def test_scenario_trace_links_pitch_and_objection(tmp_path, documents):  # 036 AC-3..AC-5
+    services = FakeServices(tmp_path, documents)
+    client = TestClient(create_app(services))
+    origin = post_session(client, mode="pitch_venda", briefing=PITCH_BRIEFING).json()
+    pitch_trace = mlflow.get_trace(mlflow.get_last_active_trace_id(), flush=True)
+    sid = origin["session_id"]
+    assert pitch_trace.data.spans[0].name == "scenario_pitch_venda"
+    assert _session_meta(pitch_trace) == sid  # AC-3
+    assert (
+        _session_meta(mlflow.get_trace(origin["trace_id"], flush=True)) == sid
+    )  # agente de comunicação
+    meta = pitch_trace.info.trace_metadata  # AC-4
+    settings = services.settings
+    assert meta["chat_model"] == settings.chat_model
+    assert meta["judge_model"] == settings.judge
+    assert meta["retriever"] == settings.backend
+    assert meta["tracking"] == settings.tracking_uri
+    result = client.get(f"/v1/sessions/{sid}").json()["mode_result"]
+    info = pitch_trace.info  # AC-5
+    assert info.request_preview.startswith("App de gastos · Diretor financeiro cético · Hoje")
+    assert len(info.request_preview) <= 200
+    assert info.response_preview == (
+        f"{result['verdict']} · {result['present_count']}/5 · Que resultados, exatamente?"
+    )
+
+    services.fakes["scenario"] = fake({"addressed": True, "reason": "Citou números."})
+    briefing = json.dumps({"comprador": "cfo_cetico", "objecao_de": sid})
+    answer = post_session(client, mode="pitch_venda", briefing=briefing).json()
+    objection_trace = mlflow.get_trace(mlflow.get_last_active_trace_id(), flush=True)
+    assert objection_trace.info.trace_id != pitch_trace.info.trace_id
+    assert _session_meta(objection_trace) == sid  # mesma conversa do pitch
+    assert _session_meta(mlflow.get_trace(answer["trace_id"], flush=True)) == sid
+    assert answer["session_id"] != sid  # o contrato da resposta não muda
+    preview = objection_trace.info.request_preview
+    assert preview.startswith("Objeção: Que resultados, exatamente? · Hoje")
+    assert objection_trace.info.response_preview == "respondida · Citou números."
+
+
+# ---------- spec 037: conversa casual sem a base ----------
+def test_ask_small_talk_skips_rag_and_judge(tmp_path, documents):  # 037 AC-4
+    judged = []
+    services = FakeServices(tmp_path, documents, judge=RunnableLambda(lambda _: judged.append(1)))
+    services.fakes["small_talk"] = fake({"reply": "E aí, fera! Bora treinar?"})
+    client = TestClient(create_app(services))
+    out = client.post("/v1/ask", json={"query": "opa eae fera"}).json()
+    assert out["kind"] == "conversa" and out["response"] == "E aí, fera! Bora treinar?"
+    assert out["evaluation_status"] == "disabled" and out["citations"] == []
+    assert judged == []
+    rag = client.post("/v1/ask", json={"query": "Como usar storytelling?"}).json()
+    assert rag["kind"] == "rag"

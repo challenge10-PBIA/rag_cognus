@@ -1,2 +1,2 @@
-FROM qwen3.5:9b
+FROM eriktonon/deepseek-v4.1-flash-1017:latest
 PARAMETER num_ctx 64000

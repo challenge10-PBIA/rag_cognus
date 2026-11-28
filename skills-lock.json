@@ -25,6 +25,13 @@
       "skillPath": "meeting-insights-analyzer/SKILL.md",
       "computedHash": "07290d48e9e3da97b145fbe85516ca32435c1141c8863e152da2b7d7543bb00a"
     },
+    "mobile-native": {
+      "source": "emilkowalski/skills",
+      "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+      "sourceType": "github",
+      "skillPath": "skills/mobile-native/SKILL.md",
+      "computedHash": "2f55a258f185314d585cb6a3514a66c15e9cfc8cd45c936284c4fb7374603d7e"
+    },
     "shadcn": {
       "source": "shadcn-ui/ui",
       "commit": "e62c9435fff729a175f38983dee73b2cb4f6a069",

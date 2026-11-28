@@ -198,7 +198,10 @@ def test_rag_trace_is_readable_by_mlflow_judges(documents):  # 011 AC-9
     assert json.loads(extract_response_from_trace(trace))["response"] == result["response"]
     tags = trace.info.tags
     assert tags["flow"] == "rag"
-    assert tags["chat_model"] == "qwen3.5:9b" and tags["judge_model"] == "qwen3.5:9b"
+    assert (
+        tags["chat_model"] == "eriktonon/deepseek-v4.1-flash-1017:latest"
+        and tags["judge_model"] == "eriktonon/deepseek-v4.1-flash-1017:latest"
+    )
 
 
 def test_rag_llm_span_has_model_role_and_options(documents):  # 011 AC-10 / 010
@@ -206,9 +209,9 @@ def test_rag_llm_span_has_model_role_and_options(documents):  # 011 AC-10 / 010
 
     pipeline(documents, structured()).predict("storytelling")
     span = next(s for s in last_trace().data.spans if s.name == "generate_grounded_answer")
-    assert span.get_attribute("model") == "qwen3.5:9b"
+    assert span.get_attribute("model") == "eriktonon/deepseek-v4.1-flash-1017:latest"
     assert span.get_attribute("role") == "generator"
-    expected = ollama_options(Settings(), "generator", num_predict=900)
+    expected = ollama_options(Settings(), "generator", num_predict=1800)  # spec 032 AC-7
     assert span.get_attribute("options") == expected
 
 
@@ -219,3 +222,9 @@ def test_failed_rag_marks_trace_as_error(documents):  # 011 AC-12 (pipeline real
     trace = last_trace()
     assert trace.info.state.value == "ERROR"
     assert trace.info.tags["error"] == "true"
+
+
+def test_truncated_answer_is_a_clear_error(documents):  # spec 032 AC-8
+    cut = {"resumo": "Organize em três partes.", "fontes": [{"chunk_id": "a", "trecho": "x"}]}
+    with pytest.raises(ValueError, match="veio incompleta"):
+        pipeline(documents, cut).predict("storytelling")
